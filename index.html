@@ -307,6 +307,10 @@
 
   /* Feedback templates */
   .feedback-grid{ display:grid; gap:12px; }
+  .ai-feedback-section{ margin-top:18px; padding-top:16px; border-top:1px solid var(--rule); }
+  .ai-toggle-label{ display:flex; align-items:flex-start; gap:8px; font-size:13.5px; color:var(--ink); cursor:pointer; }
+  .ai-toggle-label input{ margin-top:3px; flex-shrink:0; }
+  #aiFeedbackControls{ margin-top:14px; }
   .feedback-row{ display:grid; grid-template-columns:90px 1fr; gap:12px; align-items:start; }
   .feedback-row .tag{
     font-family:var(--font-mono); font-size:12px; font-weight:600; text-align:center;
@@ -534,6 +538,34 @@
       <div class="card-body">
         <p class="card-hint">Edit the remark shown for each grade band. Changes apply immediately to the report and to any PDFs you generate.</p>
         <div class="feedback-grid" id="feedbackGrid"></div>
+
+        <div class="ai-feedback-section">
+          <label class="ai-toggle-label">
+            <input type="checkbox" id="useAiFeedbackToggle">
+            Use AI-generated feedback instead &mdash; personalised per student (referencing their actual strengths/weaknesses), not just per grade band
+          </label>
+          <div id="aiFeedbackControls" style="display:none;">
+            <p class="card-hint">Calls Claude directly from your browser using your own Anthropic API key &mdash; it's sent straight to Anthropic, never through any server of ours. That said, anyone with access to this browser's developer tools could read the key while it's in use, so only paste it in on a device you trust. Nothing is generated until you click the button below, and it re-uses what's already generated rather than re-paying for students you've already done.</p>
+            <div class="mapping-grid" style="margin-bottom:10px;">
+              <div class="mapping-field">
+                <label for="aiApiKeyInput">Anthropic API key</label>
+                <input type="password" id="aiApiKeyInput" placeholder="sk-ant-...">
+              </div>
+              <div class="mapping-field">
+                <label for="aiModelSelect">Model</label>
+                <select id="aiModelSelect">
+                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (fast &amp; cheap)</option>
+                  <option value="claude-sonnet-5">Claude Sonnet 5 (higher quality, costs more)</option>
+                </select>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button class="btn secondary" id="generateAiFeedbackBtn" type="button">Generate feedback for all students</button>
+              <button class="btn secondary" id="clearAiFeedbackBtn" type="button">Clear generated feedback</button>
+            </div>
+            <div id="aiFeedbackStatus" role="status"></div>
+          </div>
+        </div>
       </div>
     </details>
 
@@ -773,6 +805,8 @@
       feedback: clone(modeKey === "half" ? DEFAULT_FEEDBACK_HALF : DEFAULT_FEEDBACK_FINAL),
       mapping: { nameCol:null, idCol:null, emailCol:null },
       emailSettings: { subject: DEFAULT_EMAIL_SUBJECT, body: DEFAULT_EMAIL_BODY },
+      useAiFeedback: false,
+      aiFeedback: {},        // { studentId: generatedText } - survives recompute, keyed by ID not array index
       sourceMode: "link",
       sourceLink: "",
       sheetName: null,
@@ -793,6 +827,8 @@
       name: name || "Subject 1",
       course: "",
       semester: "",
+      courseAutoDetected: false,   // true only while course/semester came from the sheet
+      semesterAutoDetected: false, // itself, not a manual edit - guards against silently
       profiles: { half: makeProfile("half"), final: makeProfile("final") }
     };
   }
@@ -803,10 +839,16 @@
     header: { institution:"ViTrox College", lecturer:"Teow Boon Keong" },
     subjects: [ makeSubject("Subject 1") ],
     currentSubjectId: null,
-    googleClientId: ""   // shared across subjects - a one-time OAuth setup, not per-subject
+    googleClientId: "",  // shared across subjects - a one-time OAuth setup, not per-subject
+    aiModel: "claude-haiku-4-5-20251001" // shared across subjects; the API key itself is NOT persisted (see claudeApiKey below)
   };
   state.currentSubjectId = state.subjects[0].id;
 
+  // Deliberately NOT part of `state` / not persisted to localStorage - unlike the
+  // Google Client ID (a public OAuth identifier, designed to be exposed), a raw
+  // Anthropic API key is a real secret. Keeping it in-memory only means it's gone
+  // the moment the page is closed, rather than sitting indefinitely in storage.
+  var claudeApiKey = "";
   function currentSubject(){
     var s = state.subjects.find(function(su){ return su.id === state.currentSubjectId; });
     return s || state.subjects[0];
@@ -822,6 +864,7 @@
         header: state.header,
         currentSubjectId: state.currentSubjectId,
         googleClientId: state.googleClientId,
+        aiModel: state.aiModel,
         subjects: state.subjects.map(function(su){
           var profiles = {};
           ["half","final"].forEach(function(k){
@@ -829,11 +872,14 @@
             profiles[k] = {
               assessments: p.assessments, assessmentsAutoDetected: p.assessmentsAutoDetected,
               feedback: p.feedback, mapping: p.mapping, emailSettings: p.emailSettings,
+              useAiFeedback: p.useAiFeedback, aiFeedback: p.aiFeedback,
               sourceMode: p.sourceMode, sourceLink: p.sourceLink,
               sheetName: p.sheetName, headerRowIdx: p.headerRowIdx, dataStartRowIdx: p.dataStartRowIdx
             };
           });
-          return { id: su.id, name: su.name, course: su.course, semester: su.semester, profiles: profiles };
+          return { id: su.id, name: su.name, course: su.course, semester: su.semester,
+                    courseAutoDetected: su.courseAutoDetected, semesterAutoDetected: su.semesterAutoDetected,
+                    profiles: profiles };
         })
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
@@ -870,12 +916,15 @@
       if(parsed.header) state.header = Object.assign({}, state.header, parsed.header);
       if(parsed.mode === "half" || parsed.mode === "final") state.mode = parsed.mode;
       if(typeof parsed.googleClientId === "string") state.googleClientId = parsed.googleClientId;
+      if(typeof parsed.aiModel === "string" && parsed.aiModel) state.aiModel = parsed.aiModel;
       if(Array.isArray(parsed.subjects) && parsed.subjects.length){
         state.subjects = parsed.subjects.map(function(su){
           var subj = makeSubject(su.name || "Subject");
           subj.id = su.id || subj.id;
           subj.course = su.course || "";
           subj.semester = su.semester || "";
+          subj.courseAutoDetected = !!su.courseAutoDetected;
+          subj.semesterAutoDetected = !!su.semesterAutoDetected;
           ["half","final"].forEach(function(k){
             var saved = su.profiles && su.profiles[k];
             if(!saved) return;
@@ -884,6 +933,8 @@
             if(typeof saved.assessmentsAutoDetected === "boolean") p.assessmentsAutoDetected = saved.assessmentsAutoDetected;
             if(saved.feedback) p.feedback = Object.assign({}, p.feedback, saved.feedback);
             if(saved.mapping) p.mapping = Object.assign({}, p.mapping, saved.mapping);
+            if(typeof saved.useAiFeedback === "boolean") p.useAiFeedback = saved.useAiFeedback;
+            if(saved.aiFeedback && typeof saved.aiFeedback === "object") p.aiFeedback = Object.assign({}, saved.aiFeedback);
             if(saved.emailSettings){
               p.emailSettings = Object.assign({}, p.emailSettings, saved.emailSettings);
               if(LEGACY_DEFAULT_EMAIL_BODIES.indexOf(p.emailSettings.body) !== -1){
@@ -910,6 +961,17 @@
       if(pct >= GRADE_BANDS[i].min) return GRADE_BANDS[i];
     }
     return GRADE_BANDS[GRADE_BANDS.length-1];
+  }
+
+  // Single source of truth for "what feedback text does this student see" -
+  // prefers a per-student AI-generated comment (when the toggle is on and one has
+  // been generated for them) and falls back to the static per-grade wording
+  // otherwise, e.g. before generation has run or if it failed for this student.
+  function feedbackTextFor(profile, student){
+    if(profile.useAiFeedback && profile.aiFeedback && profile.aiFeedback[student.id]){
+      return profile.aiFeedback[student.id];
+    }
+    return (profile.feedback && profile.feedback[student.grade.key]) || "";
   }
 
   // ---------------- Sheet / grid helpers ----------------
@@ -1167,6 +1229,53 @@
     return dupe ? (col.label + " (" + excelColLetter(col.index) + ")") : col.label;
   }
 
+  // ---------------- Letterhead field auto-detection ----------------
+  // Institutional templates commonly carry a small "info block" above the actual
+  // column headers - e.g. "Subject Title/ Code : Basic Algebra/BAL2113" or
+  // "Semester Starts: 8 June 2026" - scan it for a label matching the given
+  // pattern and return whatever sits in the very next non-empty cell on that row.
+  function detectHeaderFieldValue(grid, labelRegex, searchRowLimit){
+    var limit = Math.min(grid.length, searchRowLimit || 40);
+    for(var r=0; r<limit; r++){
+      var row = grid[r] || [];
+      for(var c=0; c<row.length; c++){
+        var cell = row[c];
+        if(isNonEmptyString(cell) && labelRegex.test(cell.trim())){
+          for(var c2=c+1; c2<row.length; c2++){
+            var v = row[c2];
+            if(isNonEmptyCell(v)) return v;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  var MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  function formatHeaderFieldValue(v){
+    // Object.prototype.toString (rather than instanceof) correctly recognises a
+    // Date even if it was constructed by a same-origin but differently-realmed
+    // copy of the parsing library - a real concern for XLSX in particular.
+    var isDate = v != null && Object.prototype.toString.call(v) === "[object Date]";
+    if(isDate && typeof v.getTime === "function" && !isNaN(v.getTime())){
+      return MONTH_NAMES[v.getMonth()] + " " + v.getFullYear();
+    }
+    return String(v).trim();
+  }
+
+  function detectCourseModule(grid, searchRowLimit){
+    var v = detectHeaderFieldValue(grid, /subject\s*(title|name)?\s*\/?\s*code|course\s*(title|name|module)?\s*\/?\s*code|^module\b/i, searchRowLimit);
+    return v != null ? formatHeaderFieldValue(v) : null;
+  }
+
+  function detectSemesterSession(grid, searchRowLimit){
+    // Prefer an explicit "starts" field (gives a single clean month/year); fall
+    // back to a generic semester/session/term label if that's all the sheet has.
+    var v = detectHeaderFieldValue(grid, /semester\s*start|session\s*start|term\s*start/i, searchRowLimit);
+    if(v == null) v = detectHeaderFieldValue(grid, /semester\s*\/?\s*(session|term)?|session\b|term\b/i, searchRowLimit);
+    return v != null ? formatHeaderFieldValue(v) : null;
+  }
+
   // ---------------- Status messages ----------------
   function setStatus(msg, type){
     var el = document.getElementById("statusMessage");
@@ -1179,10 +1288,10 @@
   function parseWorkbookBuffer(buf){
     var wb;
     try{
-      wb = XLSX.read(buf, { type:"array" });
+      wb = XLSX.read(buf, { type:"array", cellDates:true });
     }catch(e){
       var text = new TextDecoder("utf-8").decode(new Uint8Array(buf));
-      wb = XLSX.read(text, { type:"string" });
+      wb = XLSX.read(text, { type:"string", cellDates:true });
     }
     var grids = {};
     wb.SheetNames.forEach(function(name){
@@ -1290,6 +1399,10 @@
   // sheet is active on a profile. Pass explicit headerRowIdx/dataStartRowIdx to skip
   // auto-detection (used for manual re-scans and for re-processing after an
   // in-place edit).
+  function subjectForProfile(profile){
+    return state.subjects.find(function(su){ return su.profiles.half === profile || su.profiles.final === profile; });
+  }
+
   function applySheet(profile, sheetName, overrides){
     overrides = overrides || {};
     var sheetChanged = (profile.sheetName !== sheetName);
@@ -1307,6 +1420,24 @@
     profile.headerRowIdx = headerRowIdx;
     profile.dataStartRowIdx = dataStartRowIdx;
     profile.columns = buildColumns(grid, dataStartRowIdx);
+
+    // Pull Course/Module and Semester/Session straight from the sheet's own info
+    // block where possible - avoids typos, and stays in sync on refresh. A manual
+    // edit "locks" the field (see the input handlers below) so this never
+    // silently overwrites something the lecturer deliberately typed themselves.
+    var subj = subjectForProfile(profile);
+    if(subj){
+      var detectedCourse = detectCourseModule(grid, dataStartRowIdx);
+      if(detectedCourse && (!subj.course || subj.courseAutoDetected)){
+        subj.course = detectedCourse;
+        subj.courseAutoDetected = true;
+      }
+      var detectedSemester = detectSemesterSession(grid, dataStartRowIdx);
+      if(detectedSemester && (!subj.semester || subj.semesterAutoDetected)){
+        subj.semester = detectedSemester;
+        subj.semesterAutoDetected = true;
+      }
+    }
 
     var m = profile.mapping;
     if(sheetChanged){
@@ -1389,6 +1520,8 @@
 
     if(!stillRelevant(modeKey, subjectId)) return;
 
+    document.getElementById("fldCourse").value = currentSubject().course || "";
+    document.getElementById("fldSemester").value = currentSubject().semester || "";
     renderScanControls();
     renderIdNameMapping();
     renderAssessmentRows();
@@ -1559,6 +1692,12 @@
       colSelect.addEventListener("change", function(){
         a.colIndex = colSelect.value === "" ? null : parseInt(colSelect.value, 10);
         colSelect.classList.toggle("unmapped", a.colIndex == null);
+        if(a.colIndex != null){
+          // Report name always follows the source column - keeps it from silently
+          // going stale (or mismatched in case) if the mapping is repointed later.
+          var col = profile.columns.find(function(c){ return c.index === a.colIndex; });
+          if(col){ a.name = col.label; nameInput.value = a.name; }
+        }
         saveConfig();
         computeAndRender();
       });
@@ -1715,6 +1854,8 @@
     var profile = cur();
     applySheet(profile, this.value, {});
     saveConfig();
+    document.getElementById("fldCourse").value = currentSubject().course || "";
+    document.getElementById("fldSemester").value = currentSubject().semester || "";
     renderScanControls();
     renderIdNameMapping();
     renderAssessmentRows();
@@ -1734,6 +1875,8 @@
     }
     applySheet(profile, profile.sheetName, { headerRowIdx: hRow-1, dataStartRowIdx: dRow-1 });
     saveConfig();
+    document.getElementById("fldCourse").value = currentSubject().course || "";
+    document.getElementById("fldSemester").value = currentSubject().semester || "";
     renderIdNameMapping();
     renderAssessmentRows();
     renderAddColumnRow();
@@ -1949,7 +2092,7 @@
 
       var tdFeedback = document.createElement("td");
       tdFeedback.classList.add("remarks");
-      tdFeedback.textContent = profile.feedback[s.grade.key] || "";
+      tdFeedback.textContent = feedbackTextFor(profile, s);
       tr.appendChild(tdFeedback);
 
       tbody.appendChild(tr);
@@ -2002,7 +2145,7 @@
       row["Max"] = s.maxTotal;
       row["Percentage"] = round1(s.pct);
       row["Grade"] = s.grade.letter;
-      row["Feedback"] = profile.feedback[s.grade.key] || "";
+      row["Feedback"] = feedbackTextFor(profile, s);
       return row;
     });
   }
@@ -2193,11 +2336,135 @@
     return Object.assign({}, state.header, { course: subj.course, semester: subj.semester });
   }
 
+  // ---------------- AI-generated feedback (Anthropic API, called directly from the browser) ----------------
+  function buildFeedbackPrompt(student, profile){
+    var subj = currentSubject();
+    var meta = MODE_META[state.mode];
+    var lines = student.marks.map(function(m){
+      var w = (m.weight != null ? m.weight : m.max) || 0;
+      if(m.missing) return "- " + m.name + ": not yet recorded (worth " + round1(w) + "% of the grade)";
+      var contribution = (m.max > 0) ? (m.value / m.max) * w : 0;
+      return "- " + m.name + ": " + round1(contribution) + " of " + round1(w) + "% earned";
+    }).join("\n");
+
+    return (
+      "You are helping a university lecturer write brief, personal feedback comments for a student's " +
+      meta.pdfLabel.toLowerCase() + ".\n" +
+      "Course: " + (subj.course || "the course") + "\n" +
+      "Student: " + student.name + "\n" +
+      "Overall grade: " + student.grade.letter + " (" + round1(student.pct) + "%)\n" +
+      "Per-assessment breakdown:\n" + lines + "\n\n" +
+      "Write 2-3 sentences of feedback addressed directly to the student, in a professional and encouraging " +
+      "tone. Reference at least one specific assessment from the breakdown by name - whichever is most useful " +
+      "to mention (their strongest area, or the one that most needs attention). If the grade is a fail or " +
+      "borderline pass, gently but clearly suggest one concrete next step (e.g. reviewing a specific topic, " +
+      "attending consultation hours). Output only the feedback sentences themselves - no greeting, no " +
+      "salutation, no sign-off, ready to paste directly into an email body."
+    );
+  }
+
+  function callClaudeForFeedback(apiKey, model, prompt){
+    return fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: model,
+        max_tokens: 220,
+        messages: [{ role: "user", content: prompt }]
+      })
+    }).then(function(res){
+      if(!res.ok){
+        return res.json().catch(function(){ return {}; }).then(function(errBody){
+          throw new Error((errBody.error && errBody.error.message) || ("HTTP " + res.status));
+        });
+      }
+      return res.json();
+    }).then(function(data){
+      var text = data.content && data.content[0] && data.content[0].text;
+      if(!text) throw new Error("No text returned");
+      return text.trim();
+    });
+  }
+
+  function setAiFeedbackStatus(msg, type){
+    var el = document.getElementById("aiFeedbackStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info";
+    el.textContent = msg;
+  }
+
+  document.getElementById("useAiFeedbackToggle").addEventListener("change", function(){
+    cur().useAiFeedback = this.checked;
+    saveConfig();
+    document.getElementById("aiFeedbackControls").style.display = this.checked ? "" : "none";
+    renderReport();
+  });
+
+  document.getElementById("aiApiKeyInput").addEventListener("input", function(e){
+    claudeApiKey = e.target.value;
+  });
+  document.getElementById("aiModelSelect").addEventListener("change", function(e){
+    state.aiModel = e.target.value;
+    saveConfig();
+  });
+
+  document.getElementById("generateAiFeedbackBtn").addEventListener("click", function(){
+    var profile = cur();
+    if(!claudeApiKey.trim()){ setAiFeedbackStatus("Paste your Anthropic API key above first.", "warn"); return; }
+    if(!profile.students.length){ setAiFeedbackStatus("Load a marksheet first.", "warn"); return; }
+
+    var model = document.getElementById("aiModelSelect").value;
+    var todo = profile.students.filter(function(s){ return !profile.aiFeedback[s.id]; });
+    if(!todo.length){ setAiFeedbackStatus("Every current student already has generated feedback. Use \u201cClear generated feedback\u201d to start over.", "info"); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    var doneCount = 0, failCount = 0;
+
+    function next(idx){
+      if(idx >= todo.length){
+        btn.disabled = false;
+        saveConfig();
+        renderReport();
+        setAiFeedbackStatus("Done \u2014 " + doneCount + " generated" + (failCount ? ", " + failCount + " failed" : "") + ".", failCount ? "warn" : "info");
+        return;
+      }
+      var student = todo[idx];
+      setAiFeedbackStatus("Generating " + (idx+1) + " of " + todo.length + "\u2026", "info");
+      callClaudeForFeedback(claudeApiKey.trim(), model, buildFeedbackPrompt(student, profile)).then(function(text){
+        profile.aiFeedback[student.id] = text;
+        doneCount++;
+      }).catch(function(err){
+        failCount++;
+        setAiFeedbackStatus("Error on " + student.name + ": " + err.message, "error");
+      }).then(function(){
+        setTimeout(function(){ next(idx+1); }, 350);
+      });
+    }
+    next(0);
+  });
+
+  document.getElementById("clearAiFeedbackBtn").addEventListener("click", function(){
+    var profile = cur();
+    var count = Object.keys(profile.aiFeedback).length;
+    if(!count){ setAiFeedbackStatus("Nothing generated yet.", "info"); return; }
+    if(!window.confirm("Clear " + count + " generated feedback comment(s) for this subject/report? This can't be undone.")) return;
+    profile.aiFeedback = {};
+    saveConfig();
+    renderReport();
+    setAiFeedbackStatus("Cleared.", "info");
+  });
+
   // ---------------- Email: template filling ----------------
   function fillEmailTemplate(template, student, profile){
     var subj = currentSubject();
     var meta = MODE_META[state.mode];
-    var feedbackText = profile.feedback[student.grade.key] || "";
+    var feedbackText = feedbackTextFor(profile, student);
     var map = {
       name: student.name,
       id: student.id,
@@ -2323,7 +2590,7 @@
   function buildStudentEmailPdfBase64(student){
     var header = headerSnapshotForPdf();
     var meta = MODE_META[state.mode];
-    var feedbackText = cur().feedback[student.grade.key];
+    var feedbackText = feedbackTextFor(cur(), student);
     var doc = buildStudentPdf(window.jspdf.jsPDF, student, header, meta.pdfLabel, feedbackText);
     return arrayBufferToBase64(doc.output("arraybuffer"));
   }
@@ -2448,7 +2715,7 @@
     if(pdfLibsReady()){
       var header = headerSnapshotForPdf();
       var meta = MODE_META[state.mode];
-      var feedbackText = profile.feedback[student.grade.key];
+      var feedbackText = feedbackTextFor(profile, student);
       var pdfDoc = buildStudentPdf(window.jspdf.jsPDF, student, header, meta.pdfLabel, feedbackText);
       var url = URL.createObjectURL(pdfDoc.output("blob"));
       emailPreviewState.blobUrl = url;
@@ -2581,7 +2848,7 @@
   });
 
   // ---------------- PDF preview modal ----------------
-  var previewState = { list: [], index: 0, blobUrl: null, header: null, meta: null, feedback: null };
+  var previewState = { list: [], index: 0, blobUrl: null, header: null, meta: null, profileSnapshot: null };
 
   function openPreview(list, startIndex){
     if(!list.length){ setStatus("No students to preview yet \u2014 load a marksheet first.", "warn"); return; }
@@ -2593,7 +2860,7 @@
     previewState.index = Math.max(0, Math.min(startIndex||0, list.length-1));
     previewState.header = headerSnapshotForPdf();
     previewState.meta = MODE_META[state.mode];
-    previewState.feedback = Object.assign({}, cur().feedback);
+    previewState.profileSnapshot = { feedback: Object.assign({}, cur().feedback), useAiFeedback: cur().useAiFeedback, aiFeedback: Object.assign({}, cur().aiFeedback) };
     document.getElementById("previewOverlay").classList.add("open");
     renderPreviewCurrent();
   }
@@ -2608,7 +2875,7 @@
     if(previewState.blobUrl){ URL.revokeObjectURL(previewState.blobUrl); previewState.blobUrl = null; }
 
     var JsPDFCtor = window.jspdf.jsPDF;
-    var pdfDoc = buildStudentPdf(JsPDFCtor, s, previewState.header, previewState.meta.pdfLabel, previewState.feedback[s.grade.key]);
+    var pdfDoc = buildStudentPdf(JsPDFCtor, s, previewState.header, previewState.meta.pdfLabel, feedbackTextFor(previewState.profileSnapshot, s));
     var url = URL.createObjectURL(pdfDoc.output("blob"));
     previewState.blobUrl = url;
     document.getElementById("previewFrame").src = url;
@@ -2667,7 +2934,7 @@
 
     var headerSnapshot = headerSnapshotForPdf();
     var meta = MODE_META[state.mode];
-    var feedbackSnapshot = Object.assign({}, cur().feedback);
+    var profileSnapshotForZip = { feedback: Object.assign({}, cur().feedback), useAiFeedback: cur().useAiFeedback, aiFeedback: Object.assign({}, cur().aiFeedback) };
     var fileBase = exportFileBase();
 
     setStatus("Building " + list.length + " individual PDF" + (list.length===1?"":"s") + "\u2026", "info");
@@ -2678,7 +2945,7 @@
         var zip = new JSZip();
         var usedNames = {};
         list.forEach(function(s){
-          var pdfDoc = buildStudentPdf(window.jspdf.jsPDF, s, headerSnapshot, meta.pdfLabel, feedbackSnapshot[s.grade.key]);
+          var pdfDoc = buildStudentPdf(window.jspdf.jsPDF, s, headerSnapshot, meta.pdfLabel, feedbackTextFor(profileSnapshotForZip, s));
           var base = sanitizeFilename([s.id, s.name].filter(Boolean).join("_")) || "student";
           var name = base, n = 1;
           while(usedNames[name]){ name = base + "_" + (++n); }
@@ -2712,7 +2979,12 @@
   });
   ["Course","Semester"].forEach(function(f){
     var el = document.getElementById("fld"+f);
-    el.addEventListener("input", function(){ currentSubject()[f.toLowerCase()] = el.value; saveConfig(); });
+    el.addEventListener("input", function(){
+      var subj = currentSubject();
+      subj[f.toLowerCase()] = el.value;
+      subj[f.toLowerCase()+"AutoDetected"] = false; // a manual edit locks it - refresh won't overwrite it
+      saveConfig();
+    });
   });
 
   // ---------------- Wiring: subjects ----------------
@@ -2857,6 +3129,10 @@
     updateFileOriginNotice();
 
     document.getElementById("googleClientIdInput").value = state.googleClientId || "";
+    document.getElementById("aiModelSelect").value = state.aiModel;
+    document.getElementById("useAiFeedbackToggle").checked = !!profile.useAiFeedback;
+    document.getElementById("aiFeedbackControls").style.display = profile.useAiFeedback ? "" : "none";
+    setAiFeedbackStatus("");
     document.getElementById("emailSubjectInput").value = profile.emailSettings.subject;
     document.getElementById("emailBodyInput").value = profile.emailSettings.body;
     closeEmailPreview();
