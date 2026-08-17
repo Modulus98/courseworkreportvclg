@@ -751,11 +751,20 @@
 
   var DEFAULT_EMAIL_SUBJECT = "Your {reportLabel} \u2014 {course}";
   var DEFAULT_EMAIL_BODY =
-    "Dear {name},\n\n" +
-    "Please find attached your {reportLabel} for {course} ({semester}).\n\n" +
-    "Grade: {grade} ({percentage}%)\n\n" +
-    "{feedback}\n\n" +
-    "Regards,\n{lecturer}";
+    "Dear {name},\n" +
+    "Please find attached your {reportLabel} for {course} ({semester}).\n" +
+    "Grade: {grade} ({percentage}%)\n" +
+    "{feedback}\n" +
+    "-- \n" +
+    "Yours sincerely,\n" +
+    "Teow Boon Keong \u5f20\u6587\u5065\n" +
+    "Senior Lecturer  | ICDL Coordinator | School of Industrial Management | ViTrox College\n" +
+    "T: (60) 4-5459988 (Ext. 7902) | M: (60) 125803116 | F: N/A\n" +
+    "ViTrox | Facebook | LinkedIn\n" +
+    "Integrity . Accountability . Courage . Trust & Respect . Gratitude & Care\n" +
+    "How is my service? Please tell us. Log your feedback/compliments here. Click Here\n" +
+    "\n" +
+    "Disclaimer: Private & Confidential. This message (including any attachment) contains confidential information intended for a specific individual and purpose, and is protected by law. If you are not the intended recipient, you should delete this message. You must not, directly or indirectly, use, disclose, distribute, print, copy any part of this message, or take any action based on it.";
 
   function makeProfile(modeKey){
     return {
