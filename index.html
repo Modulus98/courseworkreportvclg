@@ -2068,15 +2068,21 @@
     doc.text("Student ID: " + (student.id || "\u2014"), margin, y);
 
     y += 18;
+    var pdfWeightSum = 0, pdfWeightedAchieved = 0;
     var body = student.marks.map(function(m){
-      return [m.name, String(m.max), m.missing ? "Not recorded" : String(m.value)];
+      var w = (m.weight != null ? m.weight : m.max) || 0;
+      pdfWeightSum += w;
+      if(m.missing) return [m.name, round1(w) + "%", "Not recorded"];
+      var contribution = (m.max > 0) ? (m.value / m.max) * w : 0;
+      pdfWeightedAchieved += contribution;
+      return [m.name, round1(w) + "%", round1(contribution) + "%"];
     });
-    body.push(["Total", String(student.maxTotal), String(Math.round(student.achieved*10)/10)]);
+    body.push(["Total", round1(pdfWeightSum) + "%", round1(pdfWeightedAchieved) + "%"]);
 
     doc.autoTable({
       startY: y,
       margin: { left: margin, right: margin },
-      head: [["Assessment", "Max marks", "Marks achieved"]],
+      head: [["Assessment", "Weight", "Achieved"]],
       body: body,
       theme: "grid",
       styles: { font:"helvetica", fontSize:10, textColor:[30,58,44], lineColor:[201,214,192], lineWidth:0.5 },
