@@ -840,6 +840,28 @@
     }catch(e){ /* storage unavailable - ignore silently */ }
   }
 
+  // Earlier shipped defaults for the email body - if a saved profile's body exactly
+  // matches one of these, the lecturer never customised it themselves, so it's safe
+  // to silently upgrade to the current default rather than leaving them stuck with
+  // an outdated template every time this file gets improved.
+  var LEGACY_DEFAULT_EMAIL_BODIES = [
+    "Dear {name},\n\n" +
+    "Please find attached your {reportLabel} for {course} ({semester}).\n\n" +
+    "Grade: {grade} ({percentage}%)\n\n" +
+    "{feedback}\n\n" +
+    "Regards,\n{lecturer}",
+
+    "Dear {name},\n" +
+    "Please find attached your {reportLabel} for {course} ({semester}).\n" +
+    "Grade: {grade} ({percentage}%)\n" +
+    "{feedback}\n" +
+    "-- \n" +
+    "Yours sincerely,\n" +
+    "Teow Boon Keong \u5f20\u6587\u5065Senior Lecturer  | ICDL Coordinator | School of Industrial Management | ViTrox College\n" +
+    "T: (60) 4-5459988 (Ext. 7902) l M: (60) 125803116 l F: N/AViTrox l Facebook l LinkedlnIntegrity . Accountability . Courage . Trust & Respect . Gratitude & Care  How is my service? Please tell us. Log your feedback/compliments here. Click Here\n" +
+    "Disclaimer: Private & Confidential. This message (including any attachment) contains confidential information intended for a specific individual and purpose, and is protected by law. If you are not the intended recipient, you should delete this message. You must not, directly or indirectly, use, disclose, distribute, print, copy any part of this message, or take any action based on it."
+  ];
+
   function loadConfig(){
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -862,7 +884,12 @@
             if(typeof saved.assessmentsAutoDetected === "boolean") p.assessmentsAutoDetected = saved.assessmentsAutoDetected;
             if(saved.feedback) p.feedback = Object.assign({}, p.feedback, saved.feedback);
             if(saved.mapping) p.mapping = Object.assign({}, p.mapping, saved.mapping);
-            if(saved.emailSettings) p.emailSettings = Object.assign({}, p.emailSettings, saved.emailSettings);
+            if(saved.emailSettings){
+              p.emailSettings = Object.assign({}, p.emailSettings, saved.emailSettings);
+              if(LEGACY_DEFAULT_EMAIL_BODIES.indexOf(p.emailSettings.body) !== -1){
+                p.emailSettings.body = DEFAULT_EMAIL_BODY;
+              }
+            }
             if(saved.sourceMode) p.sourceMode = saved.sourceMode;
             if(saved.sourceLink) p.sourceLink = saved.sourceLink;
             if(saved.sheetName) p.sheetName = saved.sheetName;
