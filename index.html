@@ -423,6 +423,13 @@
     overflow:auto; min-height:300px; position:relative;
   }
   .preview-body iframe{ width:100%; height:min(75vh, 900px); border:none; background:#fff; display:block; }
+  .preview-body-content{
+    flex:1; background:#DCE3D6; overflow-y:auto; min-height:300px; padding:20px;
+  }
+  .preview-banner{
+    background:#FBF3D8; border-bottom:1px solid var(--gold); padding:10px 18px;
+    font-size:12.5px; color:var(--ink); text-align:center;
+  }
   .preview-footer{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:12px 18px; border-top:1px solid var(--rule); flex-wrap:wrap;
@@ -667,6 +674,49 @@
           <tbody id="hexagonStudentRows"></tbody>
         </table>
 
+        <div class="ai-feedback-section">
+          <p class="card-hint" style="font-weight:600; color:var(--ink);">AI-assisted analysis (optional)</p>
+          <p class="card-hint">Uses the same Anthropic API key as AI-generated feedback (below, in step 3) &mdash; Claude reads the actual question paper or answer script images/PDFs directly from your browser, the same way. Nothing is analysed until you click a button.</p>
+
+          <details style="margin-top:12px;">
+            <summary>Question paper &rarr; auto-fill the question-mix % for one assessment</summary>
+            <div style="margin-top:10px;">
+              <div class="mapping-grid" style="margin-bottom:10px;">
+                <div class="mapping-field">
+                  <label for="qpAssessmentSelect">Assessment</label>
+                  <select id="qpAssessmentSelect"></select>
+                </div>
+                <div class="mapping-field">
+                  <label for="qpFileInput">Question paper (image or PDF)</label>
+                  <input type="file" id="qpFileInput" accept="image/*,.pdf">
+                </div>
+              </div>
+              <button class="btn secondary" id="analyzeQpBtn" type="button">Analyze question paper</button>
+              <div id="qpStatus" role="status"></div>
+            </div>
+          </details>
+
+          <details style="margin-top:10px;">
+            <summary>Answer scripts &rarr; auto-fill careless-mistake % per student, for one assessment</summary>
+            <div style="margin-top:10px;">
+              <div class="mapping-grid" style="margin-bottom:10px;">
+                <div class="mapping-field">
+                  <label for="ansAssessmentSelect">Assessment</label>
+                  <select id="ansAssessmentSelect"></select>
+                </div>
+                <div class="mapping-field">
+                  <label for="ansFilesInput">Answer scripts (multiple images/PDFs, one per student)</label>
+                  <input type="file" id="ansFilesInput" accept="image/*,.pdf" multiple>
+                </div>
+              </div>
+              <p class="card-hint">Matched to students automatically by looking for their Student ID inside each filename &mdash; name files like <code>DCS2606019_Quiz1.pdf</code>. Anything that can't be matched gets a manual dropdown before analysis runs.</p>
+              <div id="ansMatchTable"></div>
+              <button class="btn secondary" id="analyzeAnsBtn" type="button" style="margin-top:10px;">Analyze all scripts</button>
+              <div id="ansStatus" role="status"></div>
+            </div>
+          </details>
+        </div>
+
         <div class="mapping-grid" style="margin-top:16px; margin-bottom:6px;">
           <div class="mapping-field">
             <label for="hexagonPreviewSelect">Preview student</label>
@@ -674,6 +724,10 @@
           </div>
         </div>
         <div id="hexagonPreviewChart" style="max-width:360px;"></div>
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn secondary" id="previewAsStudentBtn" type="button">Preview full student dashboard for this student&hellip;</button>
+        </div>
+        <p class="card-hint">Shows exactly what this student will see, using your current data as it stands right now &mdash; no need to publish or ask a student to check for you. Uses the same rendering as the real student dashboard.</p>
       </div>
     </details>
 
@@ -826,6 +880,20 @@
         <span class="mono-note" id="emailPreviewCounter"></span>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="preview-overlay" id="studentPreviewOverlay">
+  <div class="preview-panel" role="dialog" aria-modal="true" aria-labelledby="studentPreviewTitle">
+    <div class="preview-header">
+      <div>
+        <h2 id="studentPreviewTitle">Preview</h2>
+        <div class="sub" id="studentPreviewSub"></div>
+      </div>
+      <button type="button" class="preview-close-btn" id="studentPreviewCloseBtn" aria-label="Close preview">&times;</button>
+    </div>
+    <div class="preview-banner">This is a preview only &mdash; nothing has been published. It reflects your current data exactly as it stands right now.</div>
+    <div class="preview-body-content" id="studentPreviewContent"></div>
   </div>
 </div>
 
@@ -1449,6 +1517,290 @@
 
   document.getElementById("hexagonPreviewSelect").addEventListener("change", function(){ renderHexagonPreview(); });
 
+  // ---------------- Admin "preview as student" - reuses the real student-dashboard rendering ----------------
+  function openStudentPreview(student){
+    var profile = cur();
+    var subj = currentSubject();
+    var data = buildStudentDashboardData(student, profile, subj);
+
+    document.getElementById("studentPreviewTitle").textContent = student.name || "(no name)";
+    document.getElementById("studentPreviewSub").textContent = student.email ? student.email : "(no email on file)";
+    var content = document.getElementById("studentPreviewContent");
+    content.innerHTML = "";
+    content.appendChild(buildStudentReportCard(data));
+
+    document.getElementById("studentPreviewOverlay").classList.add("open");
+  }
+  function closeStudentPreview(){
+    document.getElementById("studentPreviewOverlay").classList.remove("open");
+  }
+
+  document.getElementById("previewAsStudentBtn").addEventListener("click", function(){
+    var profile = cur();
+    var list = currentSortedFilteredStudents();
+    var selectedId = document.getElementById("hexagonPreviewSelect").value;
+    var student = list.find(function(s){ return s.id === selectedId; });
+    if(!student){ setStatus("Pick a student in the \u201cPreview student\u201d dropdown above first.", "warn"); return; }
+    openStudentPreview(student);
+  });
+  document.getElementById("studentPreviewCloseBtn").addEventListener("click", closeStudentPreview);
+  document.getElementById("studentPreviewOverlay").addEventListener("click", function(e){
+    if(e.target === this) closeStudentPreview();
+  });
+  document.addEventListener("keydown", function(e){
+    if(!document.getElementById("studentPreviewOverlay").classList.contains("open")) return;
+    if(e.key === "Escape") closeStudentPreview();
+  });
+
+  // ---------------- AI-assisted hexagon analysis (question papers + answer scripts) ----------------
+  function fileToBase64(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){
+        var dataUrl = reader.result;
+        var match = /^data:([^;]+);base64,([\s\S]*)$/.exec(dataUrl);
+        if(!match){ reject(new Error("Could not read that file.")); return; }
+        resolve({ mediaType: match[1], base64: match[2] });
+      };
+      reader.onerror = function(){ reject(new Error("Could not read that file.")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function callClaudeVisionForJSON(apiKey, model, mediaType, base64Data, prompt){
+    var contentBlock = (mediaType === "application/pdf")
+      ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Data } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } };
+
+    return fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: model,
+        max_tokens: 300,
+        messages: [{ role: "user", content: [contentBlock, { type: "text", text: prompt }] }]
+      })
+    }).then(function(res){
+      if(!res.ok){
+        return res.json().catch(function(){ return {}; }).then(function(errBody){
+          throw new Error((errBody.error && errBody.error.message) || ("HTTP " + res.status));
+        });
+      }
+      return res.json();
+    }).then(function(data){
+      var text = data.content && data.content[0] && data.content[0].text;
+      if(!text) throw new Error("No text returned");
+      var cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "");
+      var parsed;
+      try{ parsed = JSON.parse(cleaned); }
+      catch(e){ throw new Error("Couldn't parse Claude's response as JSON: " + text.slice(0, 200)); }
+      return parsed;
+    });
+  }
+
+  function buildQuestionPaperPrompt(){
+    return (
+      "You are helping a lecturer classify exam questions by cognitive type, to compute a competency " +
+      "breakdown for students.\n\n" +
+      "Look at every question shown in this question paper. Estimate what percentage of the TOTAL MARKS " +
+      "in this assessment fall into each of these three categories:\n" +
+      "- Concept-based: testing recall, definitions, or basic understanding, without applying it to a new situation.\n" +
+      "- Direct application: applying a known formula or method directly to a straightforward problem.\n" +
+      "- Indirect application: multi-step problems, novel contexts, or combining multiple concepts together.\n\n" +
+      "Respond with ONLY a JSON object in exactly this format, no other text:\n" +
+      "{\"conceptPct\": <0-100>, \"directAppPct\": <0-100>, \"indirectAppPct\": <0-100>}\n\n" +
+      "These three numbers should sum to approximately 100."
+    );
+  }
+
+  function buildAnswerScriptPrompt(){
+    return (
+      "You are helping a lecturer distinguish careless mistakes from genuine gaps in understanding in a " +
+      "student's exam answer script.\n\n" +
+      "Look through the work shown. For whatever marks the student lost, estimate what percentage of their " +
+      "TOTAL LOST MARKS came from careless or computational mistakes (e.g. arithmetic slips, transcription " +
+      "errors, sign errors, correct method but a wrong final number) as opposed to genuine gaps in " +
+      "understanding (wrong approach, a missing concept, no attempt at all).\n\n" +
+      "Respond with ONLY a JSON object in exactly this format, no other text:\n" +
+      "{\"carelessPct\": <0-100>}\n\n" +
+      "If the student scored full marks, or there isn't enough visible work to judge, respond with {\"carelessPct\": 0}."
+    );
+  }
+
+  function setQpStatus(msg, type){
+    var el = document.getElementById("qpStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info"; el.textContent = msg;
+  }
+  function setAnsStatus(msg, type){
+    var el = document.getElementById("ansStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info"; el.textContent = msg;
+  }
+
+  function populateAnalysisAssessmentSelects(){
+    var profile = cur();
+    ["qpAssessmentSelect", "ansAssessmentSelect"].forEach(function(id){
+      var select = document.getElementById(id);
+      var prevValue = select.value;
+      select.innerHTML = "";
+      profile.assessments.forEach(function(a){
+        var opt = document.createElement("option");
+        opt.value = a.name; opt.textContent = a.name;
+        select.appendChild(opt);
+      });
+      if(prevValue && profile.assessments.some(function(a){ return a.name === prevValue; })) select.value = prevValue;
+    });
+  }
+
+  document.getElementById("analyzeQpBtn").addEventListener("click", function(){
+    var profile = cur();
+    var assessmentName = document.getElementById("qpAssessmentSelect").value;
+    var assessment = profile.assessments.find(function(a){ return a.name === assessmentName; });
+    var file = document.getElementById("qpFileInput").files[0];
+
+    if(!claudeApiKey.trim()){ setQpStatus("Paste your Anthropic API key in step 3 (AI-generated feedback) first \u2014 it's reused here.", "warn"); return; }
+    if(!assessment){ setQpStatus("Pick an assessment first.", "warn"); return; }
+    if(!file){ setQpStatus("Choose a question paper file first.", "warn"); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    setQpStatus("Reading file\u2026", "info");
+
+    fileToBase64(file).then(function(fileData){
+      setQpStatus("Analyzing with Claude\u2026", "info");
+      var model = document.getElementById("aiModelSelect").value;
+      return callClaudeVisionForJSON(claudeApiKey.trim(), model, fileData.mediaType, fileData.base64, buildQuestionPaperPrompt());
+    }).then(function(result){
+      if(!assessment.hexagon) assessment.hexagon = {};
+      assessment.hexagon.conceptPct = Math.round(Number(result.conceptPct) || 0);
+      assessment.hexagon.directAppPct = Math.round(Number(result.directAppPct) || 0);
+      assessment.hexagon.indirectAppPct = Math.round(Number(result.indirectAppPct) || 0);
+      saveConfig();
+      renderHexagonAssessmentTable();
+      renderHexagonPreview();
+      btn.disabled = false;
+      setQpStatus(
+        "Done \u2014 Concept " + assessment.hexagon.conceptPct + "% / Direct app " + assessment.hexagon.directAppPct +
+        "% / Indirect app " + assessment.hexagon.indirectAppPct + "%. Review and adjust if needed \u2014 double-check against the paper yourself before relying on it.",
+        "info"
+      );
+    }).catch(function(err){
+      btn.disabled = false;
+      setQpStatus("Error: " + (err && err.message ? err.message : err), "error");
+    });
+  });
+
+  var ansFileMatches = []; // [{file, student}]
+
+  function renderAnsMatchTable(){
+    var profile = cur();
+    var container = document.getElementById("ansMatchTable");
+    if(!ansFileMatches.length){ container.innerHTML = ""; return; }
+
+    var table = document.createElement("table");
+    table.className = "plain";
+    var thead = document.createElement("thead");
+    thead.innerHTML = "<tr><th>File</th><th>Matched student</th></tr>";
+    table.appendChild(thead);
+    var tbody = document.createElement("tbody");
+
+    ansFileMatches.forEach(function(entry, idx){
+      var tr = document.createElement("tr");
+      var tdFile = document.createElement("td");
+      tdFile.textContent = entry.file.name;
+      tr.appendChild(tdFile);
+
+      var tdStudent = document.createElement("td");
+      if(entry.student){
+        tdStudent.textContent = entry.student.name;
+      } else {
+        var select = document.createElement("select");
+        select.className = "row-input";
+        var emptyOpt = document.createElement("option");
+        emptyOpt.value = ""; emptyOpt.textContent = "\u2014 pick student \u2014";
+        select.appendChild(emptyOpt);
+        profile.students.forEach(function(s){
+          var opt = document.createElement("option");
+          opt.value = s.id; opt.textContent = s.name;
+          select.appendChild(opt);
+        });
+        select.addEventListener("change", function(){
+          ansFileMatches[idx].student = profile.students.find(function(s){ return s.id === select.value; }) || null;
+        });
+        tdStudent.appendChild(select);
+      }
+      tr.appendChild(tdStudent);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.innerHTML = "";
+    container.appendChild(table);
+  }
+
+  document.getElementById("ansFilesInput").addEventListener("change", function(e){
+    var profile = cur();
+    var files = Array.prototype.slice.call(e.target.files || []);
+    ansFileMatches = files.map(function(file){
+      var matches = profile.students.filter(function(s){ return s.id && file.name.indexOf(s.id) !== -1; });
+      return { file: file, student: matches.length === 1 ? matches[0] : null };
+    });
+    renderAnsMatchTable();
+  });
+
+  document.getElementById("analyzeAnsBtn").addEventListener("click", function(){
+    var profile = cur();
+    var assessmentName = document.getElementById("ansAssessmentSelect").value;
+
+    if(!claudeApiKey.trim()){ setAnsStatus("Paste your Anthropic API key in step 3 (AI-generated feedback) first \u2014 it's reused here.", "warn"); return; }
+    if(!assessmentName){ setAnsStatus("Pick an assessment first.", "warn"); return; }
+    if(!ansFileMatches.length){ setAnsStatus("Choose answer script files first.", "warn"); return; }
+
+    var toProcess = ansFileMatches.filter(function(m){ return m.student; });
+    var skipped = ansFileMatches.length - toProcess.length;
+    if(!toProcess.length){ setAnsStatus("None of the files are matched to a student yet \u2014 pick one manually for each in the table above.", "warn"); return; }
+
+    var model = document.getElementById("aiModelSelect").value;
+    var btn = this;
+    btn.disabled = true;
+    var done = 0, failed = 0;
+
+    function next(idx){
+      if(idx >= toProcess.length){
+        btn.disabled = false;
+        saveConfig();
+        renderHexagonStudentTable();
+        renderHexagonPreview();
+        setAnsStatus(
+          "Done \u2014 " + done + " analysed" + (failed ? ", " + failed + " failed" : "") +
+          (skipped ? ", " + skipped + " file(s) skipped (no student match)" : "") + ".",
+          failed ? "warn" : "info"
+        );
+        return;
+      }
+      var entry = toProcess[idx];
+      setAnsStatus("Analyzing " + (idx+1) + " of " + toProcess.length + " (" + entry.student.name + ")\u2026", "info");
+      fileToBase64(entry.file).then(function(fileData){
+        return callClaudeVisionForJSON(claudeApiKey.trim(), model, fileData.mediaType, fileData.base64, buildAnswerScriptPrompt());
+      }).then(function(result){
+        if(!profile.hexagonStudentData[entry.student.id]) profile.hexagonStudentData[entry.student.id] = { consultationHours: null, carelessPct: {} };
+        if(!profile.hexagonStudentData[entry.student.id].carelessPct) profile.hexagonStudentData[entry.student.id].carelessPct = {};
+        profile.hexagonStudentData[entry.student.id].carelessPct[assessmentName] = Math.round(Number(result.carelessPct) || 0);
+        done++;
+      }).catch(function(){
+        failed++;
+      }).then(function(){
+        setTimeout(function(){ next(idx+1); }, 400);
+      });
+    }
+    next(0);
+  });
+
   // ---------------- Firebase: auth routing + Publish to Student Dashboard ----------------
   var firebaseApp = null, firebaseAuthInstance = null, firebaseDb = null;
   var currentAuthUser = null, currentAuthRole = null; // role: "admin" | "student" | null
@@ -1600,6 +1952,112 @@
   });
 
   // ---- Student dashboard rendering ----
+  // Single source of truth for "what does this student's dashboard payload look
+  // like" - used both when actually publishing to Firestore, and when the admin
+  // wants to preview it locally without publishing anything.
+  function buildStudentDashboardData(student, profile, subj){
+    var meta = MODE_META[state.mode];
+    var hexData = profile.hexagonStudentData[student.id] || {};
+    var scores = computeHexagonScores(profile.assessments, student, hexData);
+    return {
+      studentId: student.id,
+      studentName: student.name,
+      studentEmail: student.email,
+      subjectName: subj.name,
+      course: subj.course || "",
+      semester: subj.semester || "",
+      mode: state.mode,
+      reportLabel: meta.pdfLabel,
+      grade: student.grade.letter,
+      percentage: round1(student.pct),
+      marks: student.marks.map(function(m){ return { name:m.name, max:m.max, weight:(m.weight!=null?m.weight:m.max), value:m.value, missing:m.missing }; }),
+      feedback: feedbackTextFor(profile, student),
+      hexagon: scores,
+      lecturer: state.header.lecturer || ""
+    };
+  }
+
+  // Single source of truth for "what does one student's report card look like" -
+  // used both by the real student dashboard (fed from Firestore) and the admin's
+  // local preview (fed directly from the current, possibly-unpublished data) - so
+  // a preview is a guarantee of what will be seen, not a separate approximation.
+  function buildStudentReportCard(data){
+    var card = document.createElement("details");
+    card.className = "card";
+    card.open = true;
+    card.style.marginBottom = "20px";
+
+    var summary = document.createElement("summary");
+    summary.textContent = data.subjectName + " \u2014 " + data.reportLabel;
+    card.appendChild(summary);
+
+    var body = document.createElement("div");
+    body.className = "card-body";
+
+    var sub = document.createElement("p");
+    sub.className = "card-hint";
+    sub.textContent = [data.course, data.semester].filter(Boolean).join(" \u00b7 ");
+    body.appendChild(sub);
+
+    var gradeRow = document.createElement("div");
+    gradeRow.style.margin = "8px 0 16px";
+    var stamp = document.createElement("span");
+    stamp.className = "stamp " + (GRADE_BANDS.find(function(b){ return b.letter===data.grade; }) || {tier:"pass"}).tier;
+    stamp.textContent = data.grade;
+    gradeRow.appendChild(stamp);
+    var pctText = document.createElement("strong");
+    pctText.style.marginLeft = "10px";
+    pctText.textContent = data.percentage + "%";
+    gradeRow.appendChild(pctText);
+    body.appendChild(gradeRow);
+
+    var marksTable = document.createElement("table");
+    marksTable.className = "plain";
+    var thead = document.createElement("thead");
+    thead.innerHTML = "<tr><th>Assessment</th><th>Max marks</th><th>Marks achieved</th></tr>";
+    marksTable.appendChild(thead);
+    var tbody = document.createElement("tbody");
+    (data.marks || []).forEach(function(m){
+      var tr = document.createElement("tr");
+      var tdName = document.createElement("td"); tdName.textContent = m.name;
+      var tdMax = document.createElement("td"); tdMax.textContent = m.max;
+      var tdVal = document.createElement("td"); tdVal.textContent = m.missing ? "Not recorded" : m.value;
+      tr.appendChild(tdName); tr.appendChild(tdMax); tr.appendChild(tdVal);
+      tbody.appendChild(tr);
+    });
+    marksTable.appendChild(tbody);
+    body.appendChild(marksTable);
+
+    if(data.feedback){
+      var feedbackP = document.createElement("p");
+      feedbackP.style.fontStyle = "italic";
+      feedbackP.style.marginTop = "12px";
+      feedbackP.textContent = data.feedback;
+      body.appendChild(feedbackP);
+    }
+
+    if(data.hexagon){
+      var chartDiv = document.createElement("div");
+      chartDiv.style.maxWidth = "360px";
+      chartDiv.style.marginTop = "16px";
+      chartDiv.innerHTML = buildHexagonSVG(data.hexagon, 320);
+      body.appendChild(chartDiv);
+    }
+
+    var disclaimerP = document.createElement("p");
+    disclaimerP.style.fontSize = "11px";
+    disclaimerP.style.fontStyle = "italic";
+    disclaimerP.style.color = "var(--ink-soft)";
+    disclaimerP.style.marginTop = "18px";
+    disclaimerP.style.paddingTop = "10px";
+    disclaimerP.style.borderTop = "1px solid var(--rule)";
+    disclaimerP.textContent = "The final coursework marks are subject to the announcement by the examination board.";
+    body.appendChild(disclaimerP);
+
+    card.appendChild(body);
+    return card;
+  }
+
   function loadStudentReports(email){
     var container = document.getElementById("studentReportsList");
     container.innerHTML = '<p class="card-hint">Loading your results\u2026</p>';
@@ -1611,71 +2069,7 @@
       }
       container.innerHTML = "";
       snapshot.forEach(function(docSnap){
-        var data = docSnap.data();
-        var card = document.createElement("details");
-        card.className = "card";
-        card.open = true;
-        card.style.marginBottom = "20px";
-
-        var summary = document.createElement("summary");
-        summary.textContent = data.subjectName + " \u2014 " + data.reportLabel;
-        card.appendChild(summary);
-
-        var body = document.createElement("div");
-        body.className = "card-body";
-
-        var sub = document.createElement("p");
-        sub.className = "card-hint";
-        sub.textContent = [data.course, data.semester].filter(Boolean).join(" \u00b7 ");
-        body.appendChild(sub);
-
-        var gradeRow = document.createElement("div");
-        gradeRow.style.margin = "8px 0 16px";
-        var stamp = document.createElement("span");
-        stamp.className = "stamp " + (GRADE_BANDS.find(function(b){ return b.letter===data.grade; }) || {tier:"pass"}).tier;
-        stamp.textContent = data.grade;
-        gradeRow.appendChild(stamp);
-        var pctText = document.createElement("strong");
-        pctText.style.marginLeft = "10px";
-        pctText.textContent = data.percentage + "%";
-        gradeRow.appendChild(pctText);
-        body.appendChild(gradeRow);
-
-        var marksTable = document.createElement("table");
-        marksTable.className = "plain";
-        var thead = document.createElement("thead");
-        thead.innerHTML = "<tr><th>Assessment</th><th>Max marks</th><th>Marks achieved</th></tr>";
-        marksTable.appendChild(thead);
-        var tbody = document.createElement("tbody");
-        (data.marks || []).forEach(function(m){
-          var tr = document.createElement("tr");
-          var tdName = document.createElement("td"); tdName.textContent = m.name;
-          var tdMax = document.createElement("td"); tdMax.textContent = m.max;
-          var tdVal = document.createElement("td"); tdVal.textContent = m.missing ? "Not recorded" : m.value;
-          tr.appendChild(tdName); tr.appendChild(tdMax); tr.appendChild(tdVal);
-          tbody.appendChild(tr);
-        });
-        marksTable.appendChild(tbody);
-        body.appendChild(marksTable);
-
-        if(data.feedback){
-          var feedbackP = document.createElement("p");
-          feedbackP.style.fontStyle = "italic";
-          feedbackP.style.marginTop = "12px";
-          feedbackP.textContent = data.feedback;
-          body.appendChild(feedbackP);
-        }
-
-        if(data.hexagon){
-          var chartDiv = document.createElement("div");
-          chartDiv.style.maxWidth = "360px";
-          chartDiv.style.marginTop = "16px";
-          chartDiv.innerHTML = buildHexagonSVG(data.hexagon, 320);
-          body.appendChild(chartDiv);
-        }
-
-        card.appendChild(body);
-        container.appendChild(card);
+        container.appendChild(buildStudentReportCard(docSnap.data()));
       });
     }).catch(function(err){
       container.innerHTML = '<p class="card-hint">Couldn\u2019t load your results: ' + (err && err.message ? err.message : err) + "</p>";
@@ -1686,7 +2080,6 @@
   // audit-log entry recording that this admin published this batch just now -
   // that log is the "store all data sent by admin" record.
   function publishAllStudents(profile, subj, adminUser){
-    var meta = MODE_META[state.mode];
     var reportDocId = subj.id + "_" + state.mode;
     var published = 0, skipped = 0;
     var writes = [];
@@ -1694,27 +2087,10 @@
 
     profile.students.forEach(function(s){
       if(!s.email){ skipped++; return; }
-      var hexData = profile.hexagonStudentData[s.id] || {};
-      var scores = computeHexagonScores(profile.assessments, s, hexData);
       var docRef = sdk.doc(firebaseDb, "publishedResults", s.email, "reports", reportDocId);
-      var payload = {
-        studentId: s.id,
-        studentName: s.name,
-        studentEmail: s.email,
-        subjectName: subj.name,
-        course: subj.course || "",
-        semester: subj.semester || "",
-        mode: state.mode,
-        reportLabel: meta.pdfLabel,
-        grade: s.grade.letter,
-        percentage: round1(s.pct),
-        marks: s.marks.map(function(m){ return { name:m.name, max:m.max, weight:(m.weight!=null?m.weight:m.max), value:m.value, missing:m.missing }; }),
-        feedback: feedbackTextFor(profile, s),
-        hexagon: scores,
-        lecturer: state.header.lecturer || "",
-        publishedAt: sdk.serverTimestamp(),
-        publishedBy: adminUser.email
-      };
+      var payload = buildStudentDashboardData(s, profile, subj);
+      payload.publishedAt = sdk.serverTimestamp();
+      payload.publishedBy = adminUser.email;
       writes.push(sdk.setDoc(docRef, payload));
       published++;
     });
@@ -1946,13 +2322,40 @@
   // that neighbour exists and has its own numeric reference value, that value IS
   // the real weight - independent of the raw column's own max marks. Returns null
   // if no such signal is found, so the caller can fall back to weighting by max.
-  function detectWeightFromNeighbour(grid, refRowIdx, allColumnsByIndex, colIdx){
-    var neighbour = allColumnsByIndex[colIdx + 1];
-    if(!neighbour) return null;
-    if(!/%\s*\)?\s*$/.test(stripWeightAnnotation(neighbour.label))) return null;
-    var refVal = (grid[refRowIdx]||[])[neighbour.index];
-    if(typeof refVal === "number" && refVal > 0) return Math.round(refVal*100)/100;
-    return null;
+  // A neighbouring %-column whose reference-row value is (very close to) 100 is
+  // almost always that assessment's own percentage-of-itself - trivially 100% at
+  // the reference/max row, by definition - not a genuine weight. Label text alone
+  // isn't reliable here: some real templates name the genuine weight column
+  // "<Assessment> %" too, so the reference VALUE is the signal that actually
+  // discriminates the two cases correctly.
+  function looksLikeSelfPercentValue(refVal){
+    return Math.abs(refVal - 100) < 0.5;
+  }
+
+  // Looks one or two columns ahead of a raw-marks column for a weight hint. Some
+  // sheets have an assessment's raw mark directly followed by a "Total %"-style
+  // weighted-contribution column (the simple, common case); others insert an extra
+  // self-percentage column in between first (that assessment's own percentage of
+  // itself, reference value ~100, NOT its weight) - so a "total"-labelled column is
+  // always preferred once found, and a self-percent column (by its ~100 reference
+  // value) is skipped rather than mistaken for the real weight.
+  function detectWeightFromNeighbour(grid, refRowIdx, allColumnsByIndex, colIdx, assessmentLabel){
+    var fallback = null;
+    for(var offset=1; offset<=2; offset++){
+      var neighbour = allColumnsByIndex[colIdx + offset];
+      if(!neighbour) continue;
+      var strippedLabel = stripWeightAnnotation(neighbour.label);
+      if(!/%\s*\)?\s*$/.test(strippedLabel)) continue;
+
+      var refVal = (grid[refRowIdx]||[])[neighbour.index];
+      if(typeof refVal !== "number" || refVal <= 0) continue;
+
+      if(/total/i.test(strippedLabel)) return Math.round(refVal*100)/100;
+      if(fallback == null && !looksLikeSelfPercentValue(refVal)){
+        fallback = Math.round(refVal*100)/100;
+      }
+    }
+    return fallback;
   }
 
   function validStudentRowIndices(grid, dataStartRowIdx, nameIdx, idIdx){
@@ -1988,7 +2391,7 @@
       if(stats.nonEmptyCount === 0) return;        // nothing graded yet - not "finalised so far"
       if(stats.numericRatio < 0.6) return;          // mostly text/pass-fail/errors, not a raw mark column
       var max = detectMaxMark(grid, refRowIdx, c.index, stats.maxVal);
-      var weight = detectWeightFromNeighbour(grid, refRowIdx, byIndex, c.index);
+      var weight = detectWeightFromNeighbour(grid, refRowIdx, byIndex, c.index, c.label);
       candidates.push({
         index: c.index,
         label: c.label,
@@ -2612,7 +3015,7 @@
     var max = detectMaxMark(grid, refRowIdx, colIndex, stats.maxVal);
     var weight = detectWeightFromNeighbour(grid, refRowIdx, (function(){
       var byIndex = {}; profile.columns.forEach(function(c){ byIndex[c.index]=c; }); return byIndex;
-    })(), colIndex);
+    })(), colIndex, col.label);
 
     profile.assessments.push({ colIndex: colIndex, name: col.label, max: max, weight: weight != null ? weight : max, weightDetected: weight != null });
     saveConfig();
@@ -2905,6 +3308,7 @@
     renderHexagonAssessmentTable();
     renderHexagonStudentTable(list);
     renderHexagonPreview(list);
+    populateAnalysisAssessmentSelects();
 
     var hasData = list.length > 0;
     document.getElementById("hexagonCard").style.display = hasData ? "" : "none";
@@ -3124,7 +3528,7 @@
     doc.setFontSize(8);
     doc.setTextColor(150,150,140);
     var disclaimerWrapped = doc.splitTextToSize(
-      "Final coursework marks are subject to the ViTrox College Examination Board and can be adjusted.",
+      "The final coursework marks are subject to the announcement by the examination board.",
       pageWidth - margin*2
     );
     doc.text(disclaimerWrapped, margin, pageHeight - 60);
