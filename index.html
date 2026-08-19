@@ -668,7 +668,7 @@
           <tbody id="hexagonAssessmentRows"></tbody>
         </table>
 
-        <p class="card-hint" style="margin-top:16px;">Per-student inputs &mdash; consultation hours (ideal: 4/semester) and, for Numeracy, roughly what share of marks lost on each assessment came down to careless mistakes rather than a real gap in understanding.</p>
+        <p class="card-hint" style="margin-top:16px;">Per-student inputs &mdash; consultation hours (ideal: 4/semester), plagiarism % (from Turnitin or similar, if used), and, for Numeracy, roughly what share of marks lost on each assessment came down to careless mistakes rather than a real gap in understanding.</p>
         <table class="plain" id="hexagonStudentTable">
           <thead><tr id="hexagonStudentHeadRow"></tr></thead>
           <tbody id="hexagonStudentRows"></tbody>
@@ -1287,9 +1287,12 @@
     var peerComponent = weightedAvgHex(attitudeItems);
     var hours = studentHexData.consultationHours;
     var consultationComponent = (hours != null) ? Math.min(hours / 4, 1) * 100 : null;
+    var plagiarismPct = studentHexData.plagiarismPct;
+    var plagiarismComponent = (plagiarismPct != null) ? (100 - plagiarismPct) : null;
     var attitude = weightedAvgHex([
       { value: consultationComponent, weight: 1 },
-      { value: peerComponent, weight: 1 }
+      { value: peerComponent, weight: 1 },
+      { value: plagiarismComponent, weight: 1 }
     ]);
 
     var numeracyItems = assessments.filter(function(a){ return a.hexagon && a.hexagon.numeracy; })
@@ -1321,8 +1324,10 @@
   // obvious which axes still need data rather than silently vanishing.
   function buildHexagonSVG(scores, size){
     size = size || 320;
-    var cx = size/2, cy = size/2 + 10;
-    var R = size * 0.34;
+    var vbWidth = size + 300; // generous side margin - "Problem Solving (100)" and
+    var vbHeight = size + 70; // "Critical Thinking (100)" both need real room to avoid clipping
+    var cx = vbWidth/2, cy = vbHeight/2;
+    var R = size * 0.30;
     var levels = [0.2, 0.4, 0.6, 0.8, 1.0];
 
     function pointFor(axisIdx, value01){
@@ -1344,7 +1349,7 @@
     }).join("");
 
     var labels = HEXAGON_AXES.map(function(a, i){
-      var p = pointFor(i, 1.22);
+      var p = pointFor(i, 1.18);
       var anchor = Math.abs(p.x - cx) < 4 ? "middle" : (p.x > cx ? "start" : "end");
       var scoreVal = scores[a.key];
       var labelText = a.label + (scoreVal != null ? " (" + Math.round(scoreVal) + ")" : " (\u2014)");
@@ -1362,7 +1367,7 @@
       return '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="#2F5D3F"/>';
     }).join("");
 
-    return '<svg viewBox="0 0 '+size+' '+(size+20)+'" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">' +
+    return '<svg viewBox="0 0 '+vbWidth+' '+vbHeight+'" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">' +
       gridPolys + axisLines + dataPoly + dataDots + labels +
       '</svg>';
   }
@@ -1375,6 +1380,13 @@
     span.style.color = Math.abs(sum-100) > 0.5 ? "var(--brick)" : "var(--ink-soft)";
   }
 
+  // A quiz/test can only ever reflect Knowledge/Problem-Solving/Critical
+  // Thinking/Numeracy - it makes no pedagogical sense for a written quiz to count
+  // toward Teamwork or Attitude. Auto-guessed from the name, overridable per row.
+  function guessAssessmentType(name){
+    return /\b(quiz|test)\b/i.test(name || "") ? "quiz_test" : "assignment_other";
+  }
+
   function renderHexagonAssessmentTable(){
     var profile = cur();
     var tbody = document.getElementById("hexagonAssessmentRows");
@@ -1382,6 +1394,7 @@
 
     profile.assessments.forEach(function(a){
       if(!a.hexagon) a.hexagon = {};
+      if(!a.assessmentType) a.assessmentType = guessAssessmentType(a.name);
       var tr = document.createElement("tr");
 
       var tdName = document.createElement("td");
@@ -1389,7 +1402,38 @@
       tr.appendChild(tdName);
 
       var tdTags = document.createElement("td");
-      [["teamwork","Teamwork"],["attitude","Attitude"],["numeracy","Numeracy"]].forEach(function(pair){
+
+      var typeSelect = document.createElement("select");
+      typeSelect.className = "row-input";
+      typeSelect.style.fontSize = "11px";
+      typeSelect.style.marginBottom = "6px";
+      [["quiz_test","Quiz/Test"],["assignment_other","Assignment/Other"]].forEach(function(pair){
+        var opt = document.createElement("option");
+        opt.value = pair[0]; opt.textContent = pair[1];
+        typeSelect.appendChild(opt);
+      });
+      typeSelect.value = a.assessmentType;
+      typeSelect.addEventListener("change", function(){
+        a.assessmentType = typeSelect.value;
+        if(a.assessmentType === "quiz_test"){
+          // Teamwork/Attitude no longer apply once it's a quiz/test - clear rather
+          // than just hide, so a stale checked-but-invisible tag can't quietly
+          // keep feeding those axes.
+          a.hexagon.teamwork = false;
+          a.hexagon.attitude = false;
+        }
+        saveConfig();
+        renderHexagonAssessmentTable();
+        renderHexagonStudentTable(currentSortedFilteredStudents());
+        renderHexagonPreview(currentSortedFilteredStudents());
+      });
+      tdTags.appendChild(typeSelect);
+
+      var tagsWrap = document.createElement("div");
+      var tagOptions = (a.assessmentType === "quiz_test")
+        ? [["numeracy","Numeracy"]]
+        : [["teamwork","Teamwork"],["attitude","Attitude"],["numeracy","Numeracy"]];
+      tagOptions.forEach(function(pair){
         var label = document.createElement("label");
         label.style.display = "block"; label.style.fontSize = "12px"; label.style.marginBottom = "2px"; label.style.cursor = "pointer";
         var cb = document.createElement("input");
@@ -1403,8 +1447,9 @@
         });
         label.appendChild(cb);
         label.appendChild(document.createTextNode(" " + pair[1]));
-        tdTags.appendChild(label);
+        tagsWrap.appendChild(label);
       });
+      tdTags.appendChild(tagsWrap);
       tr.appendChild(tdTags);
 
       var tdPct = document.createElement("td");
@@ -1443,7 +1488,7 @@
 
     var headRow = document.getElementById("hexagonStudentHeadRow");
     headRow.innerHTML = "";
-    ["Name", "Consultation hrs"].concat(numeracyAssessments.map(function(a){ return a.name + " careless %"; })).forEach(function(label){
+    ["Name", "Consultation hrs", "Plagiarism %"].concat(numeracyAssessments.map(function(a){ return a.name + " careless %"; })).forEach(function(label){
       var th = document.createElement("th");
       th.textContent = label;
       headRow.appendChild(th);
@@ -1452,7 +1497,7 @@
     var tbody = document.getElementById("hexagonStudentRows");
     tbody.innerHTML = "";
     list.forEach(function(s){
-      if(!profile.hexagonStudentData[s.id]) profile.hexagonStudentData[s.id] = { consultationHours: null, carelessPct: {} };
+      if(!profile.hexagonStudentData[s.id]) profile.hexagonStudentData[s.id] = { consultationHours: null, plagiarismPct: null, carelessPct: {} };
       var data = profile.hexagonStudentData[s.id];
       if(!data.carelessPct) data.carelessPct = {};
 
@@ -1471,6 +1516,19 @@
       });
       tdHours.appendChild(hoursInput);
       tr.appendChild(tdHours);
+
+      var tdPlagiarism = document.createElement("td");
+      var plagiarismInput = document.createElement("input");
+      plagiarismInput.type = "number"; plagiarismInput.min = "0"; plagiarismInput.max = "100"; plagiarismInput.step = "1";
+      plagiarismInput.className = "row-input mono"; plagiarismInput.style.width = "70px";
+      plagiarismInput.value = data.plagiarismPct != null ? data.plagiarismPct : "";
+      plagiarismInput.addEventListener("input", function(){
+        data.plagiarismPct = plagiarismInput.value === "" ? null : parseFloat(plagiarismInput.value);
+        saveConfig();
+        renderHexagonPreview(list);
+      });
+      tdPlagiarism.appendChild(plagiarismInput);
+      tr.appendChild(tdPlagiarism);
 
       numeracyAssessments.forEach(function(a){
         var td = document.createElement("td");
@@ -2014,17 +2072,35 @@
     var marksTable = document.createElement("table");
     marksTable.className = "plain";
     var thead = document.createElement("thead");
-    thead.innerHTML = "<tr><th>Assessment</th><th>Max marks</th><th>Marks achieved</th></tr>";
+    thead.innerHTML = "<tr><th>Assessment</th><th>Weight</th><th>Achieved</th></tr>";
     marksTable.appendChild(thead);
     var tbody = document.createElement("tbody");
+    var weightSum = 0, weightedAchievedSum = 0;
     (data.marks || []).forEach(function(m){
+      var w = (m.weight != null ? m.weight : m.max) || 0;
+      weightSum += w;
       var tr = document.createElement("tr");
       var tdName = document.createElement("td"); tdName.textContent = m.name;
-      var tdMax = document.createElement("td"); tdMax.textContent = m.max;
-      var tdVal = document.createElement("td"); tdVal.textContent = m.missing ? "Not recorded" : m.value;
-      tr.appendChild(tdName); tr.appendChild(tdMax); tr.appendChild(tdVal);
+      var tdWeight = document.createElement("td"); tdWeight.textContent = round1(w) + "%";
+      var tdAchieved = document.createElement("td");
+      if(m.missing){
+        tdAchieved.textContent = "Not recorded";
+      } else {
+        var contribution = (m.max > 0) ? (m.value / m.max) * w : 0;
+        weightedAchievedSum += contribution;
+        tdAchieved.textContent = round1(contribution) + "%";
+      }
+      tr.appendChild(tdName); tr.appendChild(tdWeight); tr.appendChild(tdAchieved);
       tbody.appendChild(tr);
     });
+    var totalTr = document.createElement("tr");
+    totalTr.style.fontWeight = "bold";
+    totalTr.style.background = "#E8EFE1";
+    var tdTotalName = document.createElement("td"); tdTotalName.textContent = "Total";
+    var tdTotalWeight = document.createElement("td"); tdTotalWeight.textContent = round1(weightSum) + "%";
+    var tdTotalAchieved = document.createElement("td"); tdTotalAchieved.textContent = round1(weightedAchievedSum) + "%";
+    totalTr.appendChild(tdTotalName); totalTr.appendChild(tdTotalWeight); totalTr.appendChild(tdTotalAchieved);
+    tbody.appendChild(totalTr);
     marksTable.appendChild(tbody);
     body.appendChild(marksTable);
 
