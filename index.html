@@ -105,6 +105,13 @@
     opacity:0.85;
   }
   .title-block{ flex:1 1 340px; min-width:260px; }
+  .login-box{
+    max-width:420px; margin:60px auto; padding:36px 32px; text-align:center;
+    border:1px solid var(--rule-strong); border-radius:calc(var(--radius) * 2); background:#fff;
+  }
+  .login-title{ font-family:var(--font-display); font-size:24px; color:var(--ink); margin:0 0 10px; }
+  .admin-login-details{ margin-top:20px; padding-top:16px; border-top:1px solid var(--rule); text-align:left; }
+  .admin-login-details summary{ cursor:pointer; font-size:12px; color:var(--ink-soft); text-align:center; }
   .eyebrow{
     font-family:var(--font-mono);
     font-size:11px;
@@ -239,6 +246,7 @@
   table.plain th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--ink-soft); font-family:var(--font-mono); padding:6px 8px; border-bottom:1px solid var(--rule); }
   table.plain td{ padding:6px 8px; border-bottom:1px solid var(--rule); vertical-align:middle; }
   .row-input{ width:100%; padding:6px 8px; border:1px solid var(--rule-strong); border-radius:var(--radius); font-family:var(--font-body); font-size:14px; background:var(--paper); color:var(--ink); }
+  textarea.row-input{ resize:vertical; min-height:34px; line-height:1.4; }
   .row-input.mono{ font-family:var(--font-mono); }
   input[type=number].row-input{ width:88px; text-align:right; }
   .icon-btn{
@@ -360,6 +368,13 @@
   table#reportTable tbody tr[data-tier="fail"]{ border-left-color:var(--brick); }
   td.missing{ color:var(--brick); font-style:italic; }
   td.remarks{ max-width:260px; font-style:italic; color:var(--ink-soft); }
+  .report-feedback-input{
+    width:100%; min-width:220px; resize:vertical; border:1px solid transparent; background:transparent;
+    font-family:var(--font-body); font-style:italic; font-size:13.5px; color:var(--ink-soft);
+    padding:4px 6px; border-radius:var(--radius); line-height:1.4;
+  }
+  .report-feedback-input:hover{ border-color:var(--rule-strong); background:#fff; }
+  .report-feedback-input:focus{ border-color:var(--green); background:#fff; outline:none; font-style:normal; color:var(--ink); }
 
   .stamp{
     display:inline-block; font-family:var(--font-mono); font-weight:700; font-size:12px;
@@ -443,9 +458,64 @@
 </head>
 <body>
 
+<!-- Login screen - shown before anyone has signed in -->
+<div class="sheet" id="loginScreen">
+  <div class="login-box">
+    <div class="stamp-badge" style="margin:0 0 18px;">HALF<br>SEM<br>RECORD</div>
+    <h1 class="login-title">ViTrox Student Insights</h1>
+    <p class="card-hint">Sign in with your Google account to see your own results, once they've been published.</p>
+    <button type="button" class="btn gold" id="studentGoogleSignInBtn" style="width:100%;">Sign in with Google</button>
+    <div id="loginStatus" role="status"></div>
+
+    <details class="admin-login-details">
+      <summary>Staff login</summary>
+      <div class="mapping-grid" style="margin-top:12px; margin-bottom:10px;">
+        <div class="mapping-field">
+          <label for="loginAdminEmailInput">Admin email</label>
+          <input type="email" id="loginAdminEmailInput" placeholder="you@vitrox.edu.my">
+        </div>
+        <div class="mapping-field">
+          <label for="loginAdminPasswordInput">Password</label>
+          <input type="password" id="loginAdminPasswordInput">
+        </div>
+      </div>
+      <button type="button" class="btn secondary" id="adminSignInBtn" style="width:100%;">Sign in as admin</button>
+    </details>
+
+    <details class="admin-login-details" id="firebaseNotConfiguredNotice" style="display:none;">
+      <summary>Firebase isn't configured yet</summary>
+      <p class="card-hint" style="margin-top:10px;">Whoever manages this needs to paste the Firebase project config into the <code>FIREBASE_CONFIG</code> section near the top of this file's script once, before sign-in works for anyone. See the setup guide below.</p>
+      <div style="white-space:pre-wrap; font-size:12px; font-family:var(--font-mono); margin-top:8px;" id="firebaseSetupInstructionsLogin"></div>
+    </details>
+  </div>
+</div>
+
+<!-- Student dashboard - shown after a student (Google) signs in -->
+<div class="sheet" id="studentApp" style="display:none;">
+  <div class="letterhead">
+    <div class="subject-bar">
+      <span id="studentWelcomeLabel" class="mono-note"></span>
+      <button type="button" class="icon-btn-sm" id="studentSignOutBtn" style="margin-left:auto;">Sign out</button>
+    </div>
+    <div class="letterhead-top">
+      <div class="title-block">
+        <p class="eyebrow">ViTrox Student Insights</p>
+        <h1>Your Results</h1>
+      </div>
+    </div>
+  </div>
+  <div id="studentReportsList"></div>
+</div>
+
+<!-- Admin app - everything below, shown after admin (email/password) signs in -->
+<div id="adminApp" style="display:none;">
 <div class="sheet">
 
   <div class="letterhead">
+    <div class="subject-bar">
+      <span id="adminWelcomeLabel" class="mono-note"></span>
+      <button type="button" class="icon-btn-sm" id="adminSignOutBtn" style="margin-left:auto;">Sign out</button>
+    </div>
     <div class="subject-bar">
       <label for="subjectSelect">Subject</label>
       <select id="subjectSelect"></select>
@@ -545,7 +615,7 @@
             Use AI-generated feedback instead &mdash; personalised per student (referencing their actual strengths/weaknesses), not just per grade band
           </label>
           <div id="aiFeedbackControls" style="display:none;">
-            <p class="card-hint">Calls Claude directly from your browser using your own Anthropic API key &mdash; it's sent straight to Anthropic, never through any server of ours. That said, anyone with access to this browser's developer tools could read the key while it's in use, so only paste it in on a device you trust. Nothing is generated until you click the button below, and it re-uses what's already generated rather than re-paying for students you've already done.</p>
+            <p class="card-hint">Calls Claude directly from your browser using your own Anthropic API key &mdash; it's sent straight to Anthropic, never through any server of ours. That said, anyone with access to this browser's developer tools could read the key while it's in use, so only paste it in on a device you trust.</p>
             <div class="mapping-grid" style="margin-bottom:10px;">
               <div class="mapping-field">
                 <label for="aiApiKeyInput">Anthropic API key</label>
@@ -559,7 +629,14 @@
                 </select>
               </div>
             </div>
-            <div class="btn-row">
+
+            <p class="card-hint">Claude only knows what's in your marksheet &mdash; numbers, nothing about the student as a person. Add a note below for anyone it's worth knowing (improved a lot since the midterm, was unwell for a test, very engaged in class...) and it'll be woven into that student's feedback. Everyone else still gets good feedback by default, generated from their marks alone.</p>
+            <table class="plain" id="aiNotesTable">
+              <thead><tr><th style="width:26%">Name</th><th>Additional context (optional)</th><th style="width:110px">Status</th><th style="width:110px"></th></tr></thead>
+              <tbody id="aiNotesRows"></tbody>
+            </table>
+
+            <div class="btn-row" style="margin-top:12px;">
               <button class="btn secondary" id="generateAiFeedbackBtn" type="button">Generate feedback for all students</button>
               <button class="btn secondary" id="clearAiFeedbackBtn" type="button">Clear generated feedback</button>
             </div>
@@ -569,9 +646,40 @@
       </div>
     </details>
 
+    <!-- Hexagon competency mapping -->
+    <details class="card" id="hexagonCard" style="display:none;">
+      <summary>4. Hexagon competency mapping</summary>
+      <div class="card-body">
+        <p class="card-hint">Maps your assessments onto six competency axes for the student dashboard (separate from ViTrox LMS's official release) &mdash; Teamwork, Knowledge, Problem Solving, Critical Thinking, Attitude, and Numeracy. Tag each assessment below; some need a question-mix split since a single quiz can touch more than one axis.</p>
+
+        <table class="plain" id="hexagonAssessmentTable">
+          <thead><tr>
+            <th style="width:22%">Assessment</th>
+            <th style="width:22%">Counts toward</th>
+            <th>Question mix % &mdash; Concept / Direct application / Indirect application</th>
+          </tr></thead>
+          <tbody id="hexagonAssessmentRows"></tbody>
+        </table>
+
+        <p class="card-hint" style="margin-top:16px;">Per-student inputs &mdash; consultation hours (ideal: 4/semester) and, for Numeracy, roughly what share of marks lost on each assessment came down to careless mistakes rather than a real gap in understanding.</p>
+        <table class="plain" id="hexagonStudentTable">
+          <thead><tr id="hexagonStudentHeadRow"></tr></thead>
+          <tbody id="hexagonStudentRows"></tbody>
+        </table>
+
+        <div class="mapping-grid" style="margin-top:16px; margin-bottom:6px;">
+          <div class="mapping-field">
+            <label for="hexagonPreviewSelect">Preview student</label>
+            <select id="hexagonPreviewSelect"></select>
+          </div>
+        </div>
+        <div id="hexagonPreviewChart" style="max-width:360px;"></div>
+      </div>
+    </details>
+
     <!-- Email sending -->
     <details class="card" id="emailCard" style="display:none;">
-      <summary>4. Send by email</summary>
+      <summary>5. Send by email</summary>
       <div class="card-body">
         <p class="card-hint">Sends each student their own PDF as an attachment, straight from your Gmail/Google Workspace account &mdash; nothing passes through a third-party service. One-time setup needed first (see the button below for instructions); after that, sign in with Google once per session and send.</p>
 
@@ -616,6 +724,23 @@
       </div>
     </details>
 
+    <!-- Publish to Student Dashboard -->
+    <details class="card" id="publishCard" style="display:none;">
+      <summary>6. Publish to Student Dashboard</summary>
+      <div class="card-body">
+        <p class="card-hint">The student dashboard lives on this same page &mdash; students sign in with Google (on the login screen) to see only their own hexagon and results, and stays offline until you explicitly publish here. You're signed in as <strong id="publishAdminEmailLabel">&mdash;</strong>.</p>
+
+        <div id="firebaseSetupNotice" class="notice-banner" style="display:none;">
+          Firebase isn't fully configured yet. See the setup guide on the login screen, or ask for it again anytime.
+        </div>
+
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn gold" id="publishBtn" type="button">Publish current report to Student Dashboard</button>
+        </div>
+        <div id="publishStatus" role="status"></div>
+      </div>
+    </details>
+
   </div>
 
   <div class="legend" id="legend"></div>
@@ -647,6 +772,7 @@
     Marks are parsed, calculated, and turned into PDFs entirely in this browser tab &mdash; nothing is uploaded to a server. Only your assessment scheme, feedback wording and source link (for each report type) are remembered on this device (via local storage); student marks are always re-read fresh from the source.
   </footer>
 
+</div>
 </div>
 
 <div class="preview-overlay" id="previewOverlay">
@@ -708,11 +834,64 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.8/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module">
+  // Bridges Firebase's modular (ES module) SDK into the app's main non-module
+  // script, which can't use `import` directly. Only Auth + Firestore are loaded -
+  // this app never needs Storage/Analytics/etc.
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+  import {
+    getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider,
+    onAuthStateChanged, signOut
+  } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+  import {
+    getFirestore, doc, setDoc, serverTimestamp, collection, getDocs
+  } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+  window.firebaseSDK = {
+    initializeApp, getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider,
+    onAuthStateChanged, signOut, getFirestore, doc, setDoc, serverTimestamp, collection, getDocs
+  };
+  window.dispatchEvent(new Event("firebase-sdk-ready"));
+</script>
 <script>
 (function(){
   "use strict";
 
   var STORAGE_KEY = "vitroxMarkLedger_v3";
+
+  // ======== ONE-TIME SETUP ========
+  // Paste your Firebase project's config here once (see the admin setup guide,
+  // inside the tool itself once you're signed in) - this is what lets BOTH the
+  // student sign-in and the admin sign-in connect to the same project the moment
+  // the page loads, before anyone has done anything yet. These values are meant
+  // to be public/embedded in client code - Firebase's real security lives in the
+  // Firestore rules and Authentication, not in hiding this config.
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBfRKfaCmA81u4MDZhgCSAgT_SPJCPA4OQ",
+    authDomain: "vitrox-maths-student-dashboard.firebaseapp.com",
+    projectId: "vitrox-maths-student-dashboard",
+    storageBucket: "vitrox-maths-student-dashboard.firebasestorage.app",
+    messagingSenderId: "1076490645620",
+    appId: "1:1076490645620:web:bc4442c2ea4a12c2aea121",
+    measurementId: "G-BGY403ETXG"
+  };
+  // =================================
+
+  // Falls back to whatever was previously entered via the in-app settings fields
+  // (saved to localStorage), so nothing breaks for anyone already using that flow -
+  // filling in FIREBASE_CONFIG above directly is the recommended path going forward
+  // since it's needed before login, not just for publishing.
+  function getFirebaseConfig(){
+    if(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId) return FIREBASE_CONFIG;
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(parsed.firebaseConfig && parsed.firebaseConfig.apiKey && parsed.firebaseConfig.projectId) return parsed.firebaseConfig;
+      }
+    }catch(e){ /* ignore */ }
+    return null;
+  }
+
 
   var GRADE_BANDS = [
     { min:80, letter:"A",  key:"A",   tier:"honors" },
@@ -807,6 +986,9 @@
       emailSettings: { subject: DEFAULT_EMAIL_SUBJECT, body: DEFAULT_EMAIL_BODY },
       useAiFeedback: false,
       aiFeedback: {},        // { studentId: generatedText } - survives recompute, keyed by ID not array index
+      aiNotes: {},           // { studentId: lecturerNoteText } - extra context folded into that student's prompt
+      manualFeedback: {},    // { studentId: text } - direct override, typed straight into the report table
+      hexagonStudentData: {},// { studentId: { consultationHours, carelessPct: {assessmentName: pct} } }
       sourceMode: "link",
       sourceLink: "",
       sheetName: null,
@@ -840,7 +1022,12 @@
     subjects: [ makeSubject("Subject 1") ],
     currentSubjectId: null,
     googleClientId: "",  // shared across subjects - a one-time OAuth setup, not per-subject
-    aiModel: "claude-haiku-4-5-20251001" // shared across subjects; the API key itself is NOT persisted (see claudeApiKey below)
+    aiModel: "claude-haiku-4-5-20251001", // shared across subjects; the API key itself is NOT persisted (see claudeApiKey below)
+    // Firebase project config for the student dashboard - a one-time setup shared
+    // across every subject, same as the Google Client ID. These values (apiKey,
+    // authDomain, etc.) are meant to be public/embedded in client code by design -
+    // Firebase's real security lives in Firestore rules, not in hiding this config.
+    firebaseConfig: { apiKey:"", authDomain:"", projectId:"", storageBucket:"", messagingSenderId:"", appId:"" }
   };
   state.currentSubjectId = state.subjects[0].id;
 
@@ -864,6 +1051,7 @@
         header: state.header,
         currentSubjectId: state.currentSubjectId,
         googleClientId: state.googleClientId,
+        firebaseConfig: state.firebaseConfig,
         aiModel: state.aiModel,
         subjects: state.subjects.map(function(su){
           var profiles = {};
@@ -872,7 +1060,8 @@
             profiles[k] = {
               assessments: p.assessments, assessmentsAutoDetected: p.assessmentsAutoDetected,
               feedback: p.feedback, mapping: p.mapping, emailSettings: p.emailSettings,
-              useAiFeedback: p.useAiFeedback, aiFeedback: p.aiFeedback,
+              useAiFeedback: p.useAiFeedback, aiFeedback: p.aiFeedback, aiNotes: p.aiNotes, manualFeedback: p.manualFeedback,
+              hexagonStudentData: p.hexagonStudentData,
               sourceMode: p.sourceMode, sourceLink: p.sourceLink,
               sheetName: p.sheetName, headerRowIdx: p.headerRowIdx, dataStartRowIdx: p.dataStartRowIdx
             };
@@ -917,6 +1106,7 @@
       if(parsed.mode === "half" || parsed.mode === "final") state.mode = parsed.mode;
       if(typeof parsed.googleClientId === "string") state.googleClientId = parsed.googleClientId;
       if(typeof parsed.aiModel === "string" && parsed.aiModel) state.aiModel = parsed.aiModel;
+      if(parsed.firebaseConfig && typeof parsed.firebaseConfig === "object") state.firebaseConfig = Object.assign({}, state.firebaseConfig, parsed.firebaseConfig);
       if(Array.isArray(parsed.subjects) && parsed.subjects.length){
         state.subjects = parsed.subjects.map(function(su){
           var subj = makeSubject(su.name || "Subject");
@@ -935,6 +1125,9 @@
             if(saved.mapping) p.mapping = Object.assign({}, p.mapping, saved.mapping);
             if(typeof saved.useAiFeedback === "boolean") p.useAiFeedback = saved.useAiFeedback;
             if(saved.aiFeedback && typeof saved.aiFeedback === "object") p.aiFeedback = Object.assign({}, saved.aiFeedback);
+            if(saved.aiNotes && typeof saved.aiNotes === "object") p.aiNotes = Object.assign({}, saved.aiNotes);
+            if(saved.manualFeedback && typeof saved.manualFeedback === "object") p.manualFeedback = Object.assign({}, saved.manualFeedback);
+            if(saved.hexagonStudentData && typeof saved.hexagonStudentData === "object") p.hexagonStudentData = Object.assign({}, saved.hexagonStudentData);
             if(saved.emailSettings){
               p.emailSettings = Object.assign({}, p.emailSettings, saved.emailSettings);
               if(LEGACY_DEFAULT_EMAIL_BODIES.indexOf(p.emailSettings.body) !== -1){
@@ -963,16 +1156,611 @@
     return GRADE_BANDS[GRADE_BANDS.length-1];
   }
 
-  // Single source of truth for "what feedback text does this student see" -
-  // prefers a per-student AI-generated comment (when the toggle is on and one has
-  // been generated for them) and falls back to the static per-grade wording
-  // otherwise, e.g. before generation has run or if it failed for this student.
+  // Single source of truth for "what feedback text does this student see" - in
+  // priority order: a direct manual edit on this student (typed straight into the
+  // report table - the most deliberate override), then a per-student AI-generated
+  // comment (when the toggle is on and one has been generated), then the static
+  // per-grade wording as the general fallback.
   function feedbackTextFor(profile, student){
+    if(profile.manualFeedback && profile.manualFeedback[student.id]){
+      return profile.manualFeedback[student.id];
+    }
     if(profile.useAiFeedback && profile.aiFeedback && profile.aiFeedback[student.id]){
       return profile.aiFeedback[student.id];
     }
     return (profile.feedback && profile.feedback[student.grade.key]) || "";
   }
+
+  // ---------------- Hexagon competency scoring engine ----------------
+  // Six axes: Teamwork, Knowledge, Problem-Solving, Critical Thinking, Attitude,
+  // Numeracy. Each assessment can be tagged (via profile.assessments[i].hexagon)
+  // as contributing to one or more axes. Formulas validated against hand-computed
+  // expected values before integrating here - see the design notes for the full
+  // reasoning behind each one.
+  function weightedAvgHex(items){
+    var totalWeight = 0, sum = 0;
+    items.forEach(function(it){
+      if(it.value == null || it.weight <= 0) return;
+      totalWeight += it.weight;
+      sum += it.value * it.weight;
+    });
+    return totalWeight > 0 ? sum / totalWeight : null;
+  }
+
+  function studentPctOnAssessment(student, assessmentName){
+    var m = student.marks.find(function(mm){ return mm.name === assessmentName; });
+    if(!m || m.missing || !m.max) return null;
+    return (m.value / m.max) * 100;
+  }
+
+  function computeHexagonScores(assessments, student, studentHexData){
+    studentHexData = studentHexData || {};
+    var carelessPct = studentHexData.carelessPct || {};
+
+    var teamworkItems = assessments.filter(function(a){ return a.hexagon && a.hexagon.teamwork; })
+      .map(function(a){ return { value: studentPctOnAssessment(student, a.name), weight: a.weight }; });
+    var teamwork = weightedAvgHex(teamworkItems);
+
+    function fractionAxis(fractionKey){
+      var items = assessments
+        .filter(function(a){ return a.hexagon && a.hexagon[fractionKey] > 0; })
+        .map(function(a){
+          var frac = a.hexagon[fractionKey] / 100;
+          return { value: studentPctOnAssessment(student, a.name), weight: a.weight * frac };
+        });
+      return weightedAvgHex(items);
+    }
+    var knowledge = fractionAxis("conceptPct");
+    var problemSolving = fractionAxis("directAppPct");
+    var criticalThinking = fractionAxis("indirectAppPct");
+
+    var attitudeItems = assessments.filter(function(a){ return a.hexagon && a.hexagon.attitude; })
+      .map(function(a){ return { value: studentPctOnAssessment(student, a.name), weight: a.weight }; });
+    var peerComponent = weightedAvgHex(attitudeItems);
+    var hours = studentHexData.consultationHours;
+    var consultationComponent = (hours != null) ? Math.min(hours / 4, 1) * 100 : null;
+    var attitude = weightedAvgHex([
+      { value: consultationComponent, weight: 1 },
+      { value: peerComponent, weight: 1 }
+    ]);
+
+    var numeracyItems = assessments.filter(function(a){ return a.hexagon && a.hexagon.numeracy; })
+      .map(function(a){
+        var careless = carelessPct[a.name];
+        var value = (careless != null) ? (100 - careless) : null;
+        return { value: value, weight: a.weight };
+      });
+    var numeracy = weightedAvgHex(numeracyItems);
+
+    return {
+      teamwork: teamwork, knowledge: knowledge, problemSolving: problemSolving,
+      criticalThinking: criticalThinking, attitude: attitude, numeracy: numeracy
+    };
+  }
+
+  var HEXAGON_AXES = [
+    { key:"teamwork", label:"Teamwork" },
+    { key:"knowledge", label:"Knowledge" },
+    { key:"problemSolving", label:"Problem Solving" },
+    { key:"criticalThinking", label:"Critical Thinking" },
+    { key:"attitude", label:"Attitude" },
+    { key:"numeracy", label:"Numeracy" }
+  ];
+
+  // Builds an inline SVG radar/hexagon chart for one student's six scores.
+  // Missing axes (null - not enough tagged data yet) are plotted at the centre
+  // rather than omitted, so the shape stays a consistent hexagon and it's visually
+  // obvious which axes still need data rather than silently vanishing.
+  function buildHexagonSVG(scores, size){
+    size = size || 320;
+    var cx = size/2, cy = size/2 + 10;
+    var R = size * 0.34;
+    var levels = [0.2, 0.4, 0.6, 0.8, 1.0];
+
+    function pointFor(axisIdx, value01){
+      var angle = (Math.PI/180) * (axisIdx * 60 - 90); // axis 0 points straight up
+      return { x: cx + R*value01*Math.cos(angle), y: cy + R*value01*Math.sin(angle) };
+    }
+    function polygonPoints(value01Arr){
+      return value01Arr.map(function(v, i){ var p = pointFor(i, v); return p.x.toFixed(1)+","+p.y.toFixed(1); }).join(" ");
+    }
+
+    var gridPolys = levels.map(function(lvl){
+      var pts = HEXAGON_AXES.map(function(){ return lvl; });
+      return '<polygon points="'+polygonPoints(pts)+'" fill="none" stroke="#c9d6c0" stroke-width="1"/>';
+    }).join("");
+
+    var axisLines = HEXAGON_AXES.map(function(a, i){
+      var p = pointFor(i, 1.0);
+      return '<line x1="'+cx+'" y1="'+cy+'" x2="'+p.x.toFixed(1)+'" y2="'+p.y.toFixed(1)+'" stroke="#c9d6c0" stroke-width="1"/>';
+    }).join("");
+
+    var labels = HEXAGON_AXES.map(function(a, i){
+      var p = pointFor(i, 1.22);
+      var anchor = Math.abs(p.x - cx) < 4 ? "middle" : (p.x > cx ? "start" : "end");
+      var scoreVal = scores[a.key];
+      var labelText = a.label + (scoreVal != null ? " (" + Math.round(scoreVal) + ")" : " (\u2014)");
+      return '<text x="'+p.x.toFixed(1)+'" y="'+p.y.toFixed(1)+'" text-anchor="'+anchor+'" font-size="11" font-family="monospace" fill="#4b6156">'+labelText+'</text>';
+    }).join("");
+
+    var values01 = HEXAGON_AXES.map(function(a){ var v = scores[a.key]; return v != null ? Math.max(0,Math.min(1,v/100)) : 0; });
+    var hasAnyData = HEXAGON_AXES.some(function(a){ return scores[a.key] != null; });
+    var dataPoly = hasAnyData
+      ? '<polygon points="'+polygonPoints(values01)+'" fill="rgba(47,93,63,0.25)" stroke="#2F5D3F" stroke-width="2"/>'
+      : "";
+    var dataDots = HEXAGON_AXES.map(function(a, i){
+      if(scores[a.key] == null) return "";
+      var p = pointFor(i, values01[i]);
+      return '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="#2F5D3F"/>';
+    }).join("");
+
+    return '<svg viewBox="0 0 '+size+' '+(size+20)+'" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">' +
+      gridPolys + axisLines + dataPoly + dataDots + labels +
+      '</svg>';
+  }
+
+  // ---------------- Hexagon UI: assessment tagging + per-student inputs + preview ----------------
+  function updateHexSumIndicator(a, span){
+    var sum = (a.hexagon.conceptPct||0) + (a.hexagon.directAppPct||0) + (a.hexagon.indirectAppPct||0);
+    if(!a.hexagon.conceptPct && !a.hexagon.directAppPct && !a.hexagon.indirectAppPct){ span.textContent = ""; return; }
+    span.textContent = "= " + round1(sum) + "%";
+    span.style.color = Math.abs(sum-100) > 0.5 ? "var(--brick)" : "var(--ink-soft)";
+  }
+
+  function renderHexagonAssessmentTable(){
+    var profile = cur();
+    var tbody = document.getElementById("hexagonAssessmentRows");
+    tbody.innerHTML = "";
+
+    profile.assessments.forEach(function(a){
+      if(!a.hexagon) a.hexagon = {};
+      var tr = document.createElement("tr");
+
+      var tdName = document.createElement("td");
+      tdName.textContent = a.name;
+      tr.appendChild(tdName);
+
+      var tdTags = document.createElement("td");
+      [["teamwork","Teamwork"],["attitude","Attitude"],["numeracy","Numeracy"]].forEach(function(pair){
+        var label = document.createElement("label");
+        label.style.display = "block"; label.style.fontSize = "12px"; label.style.marginBottom = "2px"; label.style.cursor = "pointer";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!a.hexagon[pair[0]];
+        cb.addEventListener("change", function(){
+          a.hexagon[pair[0]] = cb.checked;
+          saveConfig();
+          renderHexagonStudentTable(currentSortedFilteredStudents());
+          renderHexagonPreview(currentSortedFilteredStudents());
+        });
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(" " + pair[1]));
+        tdTags.appendChild(label);
+      });
+      tr.appendChild(tdTags);
+
+      var tdPct = document.createElement("td");
+      var pctRow = document.createElement("div");
+      pctRow.style.display = "flex"; pctRow.style.gap = "6px"; pctRow.style.alignItems = "center"; pctRow.style.flexWrap = "wrap";
+      var sumSpan = document.createElement("span");
+      sumSpan.className = "mono-note";
+      ["conceptPct","directAppPct","indirectAppPct"].forEach(function(fracKey, i){
+        var input = document.createElement("input");
+        input.type = "number"; input.min = "0"; input.max = "100"; input.step = "5";
+        input.className = "row-input mono"; input.style.width = "58px";
+        input.value = (a.hexagon[fracKey] != null) ? a.hexagon[fracKey] : "";
+        input.placeholder = "0";
+        input.addEventListener("input", function(){
+          a.hexagon[fracKey] = input.value === "" ? null : parseFloat(input.value);
+          saveConfig();
+          updateHexSumIndicator(a, sumSpan);
+          renderHexagonPreview(currentSortedFilteredStudents());
+        });
+        pctRow.appendChild(input);
+        if(i < 2){ var sep = document.createElement("span"); sep.textContent = "/"; pctRow.appendChild(sep); }
+      });
+      pctRow.appendChild(sumSpan);
+      updateHexSumIndicator(a, sumSpan);
+      tdPct.appendChild(pctRow);
+      tr.appendChild(tdPct);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderHexagonStudentTable(list){
+    var profile = cur();
+    list = list || currentSortedFilteredStudents();
+    var numeracyAssessments = profile.assessments.filter(function(a){ return a.hexagon && a.hexagon.numeracy; });
+
+    var headRow = document.getElementById("hexagonStudentHeadRow");
+    headRow.innerHTML = "";
+    ["Name", "Consultation hrs"].concat(numeracyAssessments.map(function(a){ return a.name + " careless %"; })).forEach(function(label){
+      var th = document.createElement("th");
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+
+    var tbody = document.getElementById("hexagonStudentRows");
+    tbody.innerHTML = "";
+    list.forEach(function(s){
+      if(!profile.hexagonStudentData[s.id]) profile.hexagonStudentData[s.id] = { consultationHours: null, carelessPct: {} };
+      var data = profile.hexagonStudentData[s.id];
+      if(!data.carelessPct) data.carelessPct = {};
+
+      var tr = document.createElement("tr");
+      var tdName = document.createElement("td"); tdName.textContent = s.name; tr.appendChild(tdName);
+
+      var tdHours = document.createElement("td");
+      var hoursInput = document.createElement("input");
+      hoursInput.type = "number"; hoursInput.min = "0"; hoursInput.step = "0.5";
+      hoursInput.className = "row-input mono"; hoursInput.style.width = "70px";
+      hoursInput.value = data.consultationHours != null ? data.consultationHours : "";
+      hoursInput.addEventListener("input", function(){
+        data.consultationHours = hoursInput.value === "" ? null : parseFloat(hoursInput.value);
+        saveConfig();
+        renderHexagonPreview(list);
+      });
+      tdHours.appendChild(hoursInput);
+      tr.appendChild(tdHours);
+
+      numeracyAssessments.forEach(function(a){
+        var td = document.createElement("td");
+        var input = document.createElement("input");
+        input.type = "number"; input.min = "0"; input.max = "100"; input.step = "5";
+        input.className = "row-input mono"; input.style.width = "70px";
+        input.value = (data.carelessPct[a.name] != null) ? data.carelessPct[a.name] : "";
+        input.addEventListener("input", function(){
+          if(input.value === "") delete data.carelessPct[a.name];
+          else data.carelessPct[a.name] = parseFloat(input.value);
+          saveConfig();
+          renderHexagonPreview(list);
+        });
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderHexagonPreview(list){
+    var profile = cur();
+    list = list || currentSortedFilteredStudents();
+    var select = document.getElementById("hexagonPreviewSelect");
+
+    var prevValue = select.value;
+    select.innerHTML = "";
+    list.forEach(function(s){
+      var opt = document.createElement("option");
+      opt.value = s.id; opt.textContent = s.name;
+      select.appendChild(opt);
+    });
+    if(prevValue && list.some(function(s){ return s.id === prevValue; })) select.value = prevValue;
+
+    var chartDiv = document.getElementById("hexagonPreviewChart");
+    var student = list.find(function(s){ return s.id === select.value; });
+    if(!student){ chartDiv.innerHTML = ""; return; }
+
+    var data = profile.hexagonStudentData[student.id] || {};
+    var scores = computeHexagonScores(profile.assessments, student, data);
+    chartDiv.innerHTML = buildHexagonSVG(scores, 320);
+  }
+
+  document.getElementById("hexagonPreviewSelect").addEventListener("change", function(){ renderHexagonPreview(); });
+
+  // ---------------- Firebase: auth routing + Publish to Student Dashboard ----------------
+  var firebaseApp = null, firebaseAuthInstance = null, firebaseDb = null;
+  var currentAuthUser = null, currentAuthRole = null; // role: "admin" | "student" | null
+
+  function ensureFirebaseApp(){
+    if(firebaseApp) return true;
+    if(!window.firebaseSDK) return false;
+    var cfg = getFirebaseConfig();
+    if(!cfg) return false;
+    firebaseApp = window.firebaseSDK.initializeApp(cfg);
+    firebaseAuthInstance = window.firebaseSDK.getAuth(firebaseApp);
+    firebaseDb = window.firebaseSDK.getFirestore(firebaseApp);
+    return true;
+  }
+
+  function setPublishStatus(msg, type){
+    var el = document.getElementById("publishStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info";
+    el.textContent = msg;
+  }
+  function setLoginStatus(msg, type){
+    var el = document.getElementById("loginStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info";
+    el.textContent = msg;
+  }
+
+  var FIREBASE_SETUP_INSTRUCTIONS =
+    "1. Go to console.firebase.google.com -> Add project (or use an existing one).\n" +
+    "2. Build -> Authentication -> Get started.\n" +
+    "   - Sign-in method -> enable \"Google\" (this is what students use) and \"Email/Password\" (this is your admin login).\n" +
+    "   - Users tab -> Add user -> your own email + a password you choose. That's the admin login.\n" +
+    "3. Build -> Firestore Database -> Create database -> pick a nearby region -> start in production mode.\n" +
+    "4. Rules tab -> replace everything with this (swap in your real admin email), then click Publish:\n\n" +
+    "rules_version = '2';\n" +
+    "service cloud.firestore {\n" +
+    "  match /databases/{database}/documents {\n" +
+    "    function isAdmin() {\n" +
+    "      return request.auth != null && request.auth.token.email == \"YOUR_ADMIN_EMAIL_HERE\";\n" +
+    "    }\n" +
+    "    match /publishedResults/{studentEmail} {\n" +
+    "      match /reports/{reportId} {\n" +
+    "        allow read: if request.auth != null && request.auth.token.email == studentEmail;\n" +
+    "        allow write: if isAdmin();\n" +
+    "      }\n" +
+    "    }\n" +
+    "    match /publishLog/{logId} {\n" +
+    "      allow read, write: if isAdmin();\n" +
+    "    }\n" +
+    "  }\n" +
+    "}\n\n" +
+    "This is what actually enforces \"students only see their own marks\" - not anything in this page's own JavaScript.\n\n" +
+    "5. Project settings (gear icon) -> General -> scroll to \"Your apps\" -> Add app -> Web (</>).\n" +
+    "   - Register the app (any nickname), skip the hosting step for now.\n" +
+    "   - Copy the firebaseConfig values shown into the FIREBASE_CONFIG object near the top of this file's script, then re-save/re-deploy.\n\n" +
+    "Note: these values are meant to be public/embedded in client code - Firebase's real security comes from the Firestore rules and Authentication above, not from hiding this config. Free tier (Spark plan) comfortably covers a single lecturer's classes at zero cost.";
+
+  // ---- Screen switching ----
+  function showLoginScreen(){
+    document.getElementById("loginScreen").style.display = "";
+    document.getElementById("studentApp").style.display = "none";
+    document.getElementById("adminApp").style.display = "none";
+  }
+  function showStudentApp(){
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("studentApp").style.display = "";
+    document.getElementById("adminApp").style.display = "none";
+  }
+  function showAdminApp(){
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("studentApp").style.display = "none";
+    document.getElementById("adminApp").style.display = "";
+  }
+
+  // Role is inferred from which sign-in provider was used to authenticate - the
+  // only two options offered are Google (students) and Email/Password (the one
+  // admin account created directly in Firebase Authentication).
+  function roleForUser(user){
+    if(!user || !user.providerData || !user.providerData.length) return null;
+    var providerId = user.providerData[0].providerId;
+    if(providerId === "password") return "admin";
+    if(providerId === "google.com") return "student";
+    return null;
+  }
+
+  function initAuthRouting(retriesLeft){
+    retriesLeft = (retriesLeft == null) ? 25 : retriesLeft; // ~5s total before giving up
+    var cfg = getFirebaseConfig();
+    if(!cfg){
+      document.getElementById("firebaseNotConfiguredNotice").style.display = "";
+      document.getElementById("firebaseSetupInstructionsLogin").textContent = FIREBASE_SETUP_INSTRUCTIONS;
+      document.getElementById("studentGoogleSignInBtn").disabled = true;
+      document.getElementById("adminSignInBtn").disabled = true;
+      return;
+    }
+    if(!ensureFirebaseApp()){
+      if(retriesLeft <= 0){
+        setLoginStatus("Couldn't load Firebase's library. Check your internet connection and reload the page.", "error");
+        return;
+      }
+      setTimeout(function(){ initAuthRouting(retriesLeft - 1); }, 200); // firebaseSDK module script may still be loading
+      return;
+    }
+    window.firebaseSDK.onAuthStateChanged(firebaseAuthInstance, function(user){
+      currentAuthUser = user;
+      currentAuthRole = roleForUser(user);
+      if(!user){ showLoginScreen(); return; }
+      if(currentAuthRole === "admin"){
+        document.getElementById("adminWelcomeLabel").textContent = "Signed in as " + user.email;
+        document.getElementById("publishAdminEmailLabel").textContent = user.email;
+        showAdminApp();
+      } else if(currentAuthRole === "student"){
+        document.getElementById("studentWelcomeLabel").textContent = user.displayName || user.email;
+        showStudentApp();
+        loadStudentReports(user.email);
+      } else {
+        showLoginScreen();
+        setLoginStatus("Signed in, but couldn't determine your role - please sign out and try again.", "warn");
+      }
+    });
+  }
+
+  document.getElementById("studentGoogleSignInBtn").addEventListener("click", function(){
+    if(!ensureFirebaseApp()){ setLoginStatus("Firebase isn't configured yet.", "warn"); return; }
+    setLoginStatus("Opening Google sign-in\u2026", "info");
+    var provider = new window.firebaseSDK.GoogleAuthProvider();
+    window.firebaseSDK.signInWithPopup(firebaseAuthInstance, provider).catch(function(err){
+      setLoginStatus("Sign-in failed: " + (err && err.message ? err.message : err), "error");
+    });
+  });
+
+  document.getElementById("adminSignInBtn").addEventListener("click", function(){
+    if(!ensureFirebaseApp()){ setLoginStatus("Firebase isn't configured yet.", "warn"); return; }
+    var email = document.getElementById("loginAdminEmailInput").value.trim();
+    var password = document.getElementById("loginAdminPasswordInput").value;
+    if(!email || !password){ setLoginStatus("Enter your admin email and password.", "warn"); return; }
+    setLoginStatus("Signing in\u2026", "info");
+    window.firebaseSDK.signInWithEmailAndPassword(firebaseAuthInstance, email, password).catch(function(err){
+      setLoginStatus("Sign-in failed: " + (err && err.message ? err.message : err), "error");
+    });
+  });
+
+  document.getElementById("adminSignOutBtn").addEventListener("click", function(){
+    if(firebaseAuthInstance) window.firebaseSDK.signOut(firebaseAuthInstance);
+  });
+  document.getElementById("studentSignOutBtn").addEventListener("click", function(){
+    if(firebaseAuthInstance) window.firebaseSDK.signOut(firebaseAuthInstance);
+  });
+
+  // ---- Student dashboard rendering ----
+  function loadStudentReports(email){
+    var container = document.getElementById("studentReportsList");
+    container.innerHTML = '<p class="card-hint">Loading your results\u2026</p>';
+    var reportsCol = window.firebaseSDK.collection(firebaseDb, "publishedResults", email, "reports");
+    window.firebaseSDK.getDocs(reportsCol).then(function(snapshot){
+      if(snapshot.empty){
+        container.innerHTML = '<p class="card-hint">No results have been published for you yet. Check back after your lecturer releases them.</p>';
+        return;
+      }
+      container.innerHTML = "";
+      snapshot.forEach(function(docSnap){
+        var data = docSnap.data();
+        var card = document.createElement("details");
+        card.className = "card";
+        card.open = true;
+        card.style.marginBottom = "20px";
+
+        var summary = document.createElement("summary");
+        summary.textContent = data.subjectName + " \u2014 " + data.reportLabel;
+        card.appendChild(summary);
+
+        var body = document.createElement("div");
+        body.className = "card-body";
+
+        var sub = document.createElement("p");
+        sub.className = "card-hint";
+        sub.textContent = [data.course, data.semester].filter(Boolean).join(" \u00b7 ");
+        body.appendChild(sub);
+
+        var gradeRow = document.createElement("div");
+        gradeRow.style.margin = "8px 0 16px";
+        var stamp = document.createElement("span");
+        stamp.className = "stamp " + (GRADE_BANDS.find(function(b){ return b.letter===data.grade; }) || {tier:"pass"}).tier;
+        stamp.textContent = data.grade;
+        gradeRow.appendChild(stamp);
+        var pctText = document.createElement("strong");
+        pctText.style.marginLeft = "10px";
+        pctText.textContent = data.percentage + "%";
+        gradeRow.appendChild(pctText);
+        body.appendChild(gradeRow);
+
+        var marksTable = document.createElement("table");
+        marksTable.className = "plain";
+        var thead = document.createElement("thead");
+        thead.innerHTML = "<tr><th>Assessment</th><th>Max marks</th><th>Marks achieved</th></tr>";
+        marksTable.appendChild(thead);
+        var tbody = document.createElement("tbody");
+        (data.marks || []).forEach(function(m){
+          var tr = document.createElement("tr");
+          var tdName = document.createElement("td"); tdName.textContent = m.name;
+          var tdMax = document.createElement("td"); tdMax.textContent = m.max;
+          var tdVal = document.createElement("td"); tdVal.textContent = m.missing ? "Not recorded" : m.value;
+          tr.appendChild(tdName); tr.appendChild(tdMax); tr.appendChild(tdVal);
+          tbody.appendChild(tr);
+        });
+        marksTable.appendChild(tbody);
+        body.appendChild(marksTable);
+
+        if(data.feedback){
+          var feedbackP = document.createElement("p");
+          feedbackP.style.fontStyle = "italic";
+          feedbackP.style.marginTop = "12px";
+          feedbackP.textContent = data.feedback;
+          body.appendChild(feedbackP);
+        }
+
+        if(data.hexagon){
+          var chartDiv = document.createElement("div");
+          chartDiv.style.maxWidth = "360px";
+          chartDiv.style.marginTop = "16px";
+          chartDiv.innerHTML = buildHexagonSVG(data.hexagon, 320);
+          body.appendChild(chartDiv);
+        }
+
+        card.appendChild(body);
+        container.appendChild(card);
+      });
+    }).catch(function(err){
+      container.innerHTML = '<p class="card-hint">Couldn\u2019t load your results: ' + (err && err.message ? err.message : err) + "</p>";
+    });
+  }
+
+  // Writes every student's finished report + hexagon scores to Firestore, plus one
+  // audit-log entry recording that this admin published this batch just now -
+  // that log is the "store all data sent by admin" record.
+  function publishAllStudents(profile, subj, adminUser){
+    var meta = MODE_META[state.mode];
+    var reportDocId = subj.id + "_" + state.mode;
+    var published = 0, skipped = 0;
+    var writes = [];
+    var sdk = window.firebaseSDK;
+
+    profile.students.forEach(function(s){
+      if(!s.email){ skipped++; return; }
+      var hexData = profile.hexagonStudentData[s.id] || {};
+      var scores = computeHexagonScores(profile.assessments, s, hexData);
+      var docRef = sdk.doc(firebaseDb, "publishedResults", s.email, "reports", reportDocId);
+      var payload = {
+        studentId: s.id,
+        studentName: s.name,
+        studentEmail: s.email,
+        subjectName: subj.name,
+        course: subj.course || "",
+        semester: subj.semester || "",
+        mode: state.mode,
+        reportLabel: meta.pdfLabel,
+        grade: s.grade.letter,
+        percentage: round1(s.pct),
+        marks: s.marks.map(function(m){ return { name:m.name, max:m.max, weight:(m.weight!=null?m.weight:m.max), value:m.value, missing:m.missing }; }),
+        feedback: feedbackTextFor(profile, s),
+        hexagon: scores,
+        lecturer: state.header.lecturer || "",
+        publishedAt: sdk.serverTimestamp(),
+        publishedBy: adminUser.email
+      };
+      writes.push(sdk.setDoc(docRef, payload));
+      published++;
+    });
+
+    var auditRef = sdk.doc(sdk.collection(firebaseDb, "publishLog"));
+    writes.push(sdk.setDoc(auditRef, {
+      adminEmail: adminUser.email,
+      subjectName: subj.name,
+      mode: state.mode,
+      studentCount: published,
+      timestamp: sdk.serverTimestamp()
+    }));
+
+    return Promise.all(writes).then(function(){ return { published: published, skipped: skipped }; });
+  }
+
+  document.getElementById("publishBtn").addEventListener("click", function(){
+    var profile = cur();
+    var subj = currentSubject();
+
+    if(!currentAuthUser || currentAuthRole !== "admin"){
+      setPublishStatus("You need to be signed in as admin to publish.", "warn");
+      return;
+    }
+    if(!profile.students.length){ setPublishStatus("Load a marksheet first.", "warn"); return; }
+    if(profile.mapping.emailCol == null){
+      setPublishStatus("No email column mapped in step 2 - students are matched to their results by email, so this is required.", "warn");
+      return;
+    }
+
+    var btn = this;
+    btn.disabled = true;
+    setPublishStatus("Publishing " + profile.students.length + " student(s)\u2026", "info");
+
+    publishAllStudents(profile, subj, currentAuthUser).then(function(result){
+      btn.disabled = false;
+      setPublishStatus(
+        "Published " + result.published + " student(s)" +
+        (result.skipped ? ", skipped " + result.skipped + " with no email address" : "") + ".",
+        "info"
+      );
+    }).catch(function(err){
+      btn.disabled = false;
+      setPublishStatus("Error: " + (err && err.message ? err.message : err), "error");
+    });
+  });
 
   // ---------------- Sheet / grid helpers ----------------
   function isNonEmptyString(v){ return typeof v === "string" && v.trim() !== ""; }
@@ -2092,13 +2880,35 @@
 
       var tdFeedback = document.createElement("td");
       tdFeedback.classList.add("remarks");
-      tdFeedback.textContent = feedbackTextFor(profile, s);
+      var feedbackArea = document.createElement("textarea");
+      feedbackArea.className = "report-feedback-input";
+      feedbackArea.rows = 2;
+      feedbackArea.value = feedbackTextFor(profile, s);
+      feedbackArea.setAttribute("aria-label", "Feedback for " + s.name);
+      feedbackArea.addEventListener("input", function(){
+        var val = feedbackArea.value;
+        if(val.trim() === "") delete profile.manualFeedback[s.id];
+        else profile.manualFeedback[s.id] = val;
+        saveConfig();
+      });
+      feedbackArea.addEventListener("blur", function(){
+        if(feedbackArea.value.trim() === "") feedbackArea.value = feedbackTextFor(profile, s);
+      });
+      tdFeedback.appendChild(feedbackArea);
       tr.appendChild(tdFeedback);
 
       tbody.appendChild(tr);
     });
 
     renderEmailRecipients(list);
+    renderAiNotesTable(list);
+    renderHexagonAssessmentTable();
+    renderHexagonStudentTable(list);
+    renderHexagonPreview(list);
+
+    var hasData = list.length > 0;
+    document.getElementById("hexagonCard").style.display = hasData ? "" : "none";
+    document.getElementById("publishCard").style.display = hasData ? "" : "none";
   }
 
   function round1(n){ return Math.round(n*10)/10; }
@@ -2308,7 +3118,16 @@
 
     doc.setDrawColor(230,230,225);
     doc.setLineWidth(0.75);
-    doc.line(margin, pageHeight - 56, pageWidth - margin, pageHeight - 56);
+    doc.line(margin, pageHeight - 70, pageWidth - margin, pageHeight - 70);
+
+    doc.setFont("helvetica","italic");
+    doc.setFontSize(8);
+    doc.setTextColor(150,150,140);
+    var disclaimerWrapped = doc.splitTextToSize(
+      "Final coursework marks are subject to the ViTrox College Examination Board and can be adjusted.",
+      pageWidth - margin*2
+    );
+    doc.text(disclaimerWrapped, margin, pageHeight - 60);
 
     doc.setFont("helvetica","normal");
     doc.setFontSize(8.5);
@@ -2347,13 +3166,19 @@
       return "- " + m.name + ": " + round1(contribution) + " of " + round1(w) + "% earned";
     }).join("\n");
 
+    var note = (profile.aiNotes && profile.aiNotes[student.id]) ? String(profile.aiNotes[student.id]).trim() : "";
+    var noteSection = note
+      ? ("\n\nThe lecturer also shared this about the student specifically - weave it in naturally where it fits, " +
+         "don't just tack it on: \"" + note + "\"")
+      : "";
+
     return (
       "You are helping a university lecturer write brief, personal feedback comments for a student's " +
       meta.pdfLabel.toLowerCase() + ".\n" +
       "Course: " + (subj.course || "the course") + "\n" +
       "Student: " + student.name + "\n" +
       "Overall grade: " + student.grade.letter + " (" + round1(student.pct) + "%)\n" +
-      "Per-assessment breakdown:\n" + lines + "\n\n" +
+      "Per-assessment breakdown:\n" + lines + noteSection + "\n\n" +
       "Write 2-3 sentences of feedback addressed directly to the student, in a professional and encouraging " +
       "tone. Reference at least one specific assessment from the breakdown by name - whichever is most useful " +
       "to mention (their strongest area, or the one that most needs attention). If the grade is a fail or " +
@@ -2413,6 +3238,74 @@
     saveConfig();
   });
 
+  var aiNoteStatusPills = {}; // studentId -> <span> element, rebuilt each render
+
+  function renderAiNotesTable(list){
+    var profile = cur();
+    list = list || currentSortedFilteredStudents();
+    var tbody = document.getElementById("aiNotesRows");
+    tbody.innerHTML = "";
+    aiNoteStatusPills = {};
+
+    list.forEach(function(s){
+      var tr = document.createElement("tr");
+
+      var tdName = document.createElement("td");
+      tdName.textContent = s.name;
+
+      var tdNote = document.createElement("td");
+      var noteInput = document.createElement("textarea");
+      noteInput.rows = 1;
+      noteInput.className = "row-input";
+      noteInput.value = profile.aiNotes[s.id] || "";
+      noteInput.placeholder = "e.g. improved a lot since the midterm, was unwell for Test 1\u2026";
+      noteInput.addEventListener("input", function(){
+        profile.aiNotes[s.id] = noteInput.value;
+        saveConfig();
+      });
+      tdNote.appendChild(noteInput);
+
+      var tdStatus = document.createElement("td");
+      var pill = document.createElement("span");
+      var hasFeedback = !!profile.aiFeedback[s.id];
+      pill.className = "status-pill" + (hasFeedback ? " sent" : "");
+      pill.textContent = hasFeedback ? "Generated" : "Not yet";
+      aiNoteStatusPills[s.id] = pill;
+      tdStatus.appendChild(pill);
+
+      var tdBtn = document.createElement("td");
+      var genBtn = document.createElement("button");
+      genBtn.type = "button"; genBtn.className = "btn secondary";
+      genBtn.textContent = hasFeedback ? "Regenerate" : "Generate";
+      genBtn.addEventListener("click", function(){ generateFeedbackForOne(s, genBtn); });
+      tdBtn.appendChild(genBtn);
+
+      tr.appendChild(tdName); tr.appendChild(tdNote); tr.appendChild(tdStatus); tr.appendChild(tdBtn);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function generateFeedbackForOne(student, btn){
+    if(!claudeApiKey.trim()){ setAiFeedbackStatus("Paste your Anthropic API key above first.", "warn"); return; }
+    var profile = cur();
+    var model = document.getElementById("aiModelSelect").value;
+    var pill = aiNoteStatusPills[student.id];
+    if(pill){ pill.className = "status-pill sending"; pill.textContent = "Generating\u2026"; }
+    if(btn) btn.disabled = true;
+    setAiFeedbackStatus("Generating for " + student.name + "\u2026", "info");
+
+    callClaudeForFeedback(claudeApiKey.trim(), model, buildFeedbackPrompt(student, profile)).then(function(text){
+      profile.aiFeedback[student.id] = text;
+      saveConfig();
+      renderReport();
+      setAiFeedbackStatus("Generated for " + student.name + ".", "info");
+    }).catch(function(err){
+      if(pill){ pill.className = "status-pill failed"; pill.textContent = "Failed"; pill.title = err.message; }
+      if(btn) btn.disabled = false;
+      setAiFeedbackStatus("Error for " + student.name + ": " + err.message, "error");
+    });
+  }
+
   document.getElementById("generateAiFeedbackBtn").addEventListener("click", function(){
     var profile = cur();
     if(!claudeApiKey.trim()){ setAiFeedbackStatus("Paste your Anthropic API key above first.", "warn"); return; }
@@ -2420,7 +3313,7 @@
 
     var model = document.getElementById("aiModelSelect").value;
     var todo = profile.students.filter(function(s){ return !profile.aiFeedback[s.id]; });
-    if(!todo.length){ setAiFeedbackStatus("Every current student already has generated feedback. Use \u201cClear generated feedback\u201d to start over.", "info"); return; }
+    if(!todo.length){ setAiFeedbackStatus("Every current student already has generated feedback. Use \u201cRegenerate\u201d on a row, or \u201cClear generated feedback\u201d to start over.", "info"); return; }
 
     var btn = this;
     btn.disabled = true;
@@ -2435,12 +3328,16 @@
         return;
       }
       var student = todo[idx];
+      var pill = aiNoteStatusPills[student.id];
+      if(pill){ pill.className = "status-pill sending"; pill.textContent = "Generating\u2026"; }
       setAiFeedbackStatus("Generating " + (idx+1) + " of " + todo.length + "\u2026", "info");
       callClaudeForFeedback(claudeApiKey.trim(), model, buildFeedbackPrompt(student, profile)).then(function(text){
         profile.aiFeedback[student.id] = text;
         doneCount++;
+        if(pill){ pill.className = "status-pill sent"; pill.textContent = "Generated"; }
       }).catch(function(err){
         failCount++;
+        if(pill){ pill.className = "status-pill failed"; pill.textContent = "Failed"; pill.title = err.message; }
         setAiFeedbackStatus("Error on " + student.name + ": " + err.message, "error");
       }).then(function(){
         setTimeout(function(){ next(idx+1); }, 350);
@@ -2453,7 +3350,7 @@
     var profile = cur();
     var count = Object.keys(profile.aiFeedback).length;
     if(!count){ setAiFeedbackStatus("Nothing generated yet.", "info"); return; }
-    if(!window.confirm("Clear " + count + " generated feedback comment(s) for this subject/report? This can't be undone.")) return;
+    if(!window.confirm("Clear " + count + " generated feedback comment(s) for this subject/report? This can't be undone. Your notes will be kept.")) return;
     profile.aiFeedback = {};
     saveConfig();
     renderReport();
@@ -2860,7 +3757,7 @@
     previewState.index = Math.max(0, Math.min(startIndex||0, list.length-1));
     previewState.header = headerSnapshotForPdf();
     previewState.meta = MODE_META[state.mode];
-    previewState.profileSnapshot = { feedback: Object.assign({}, cur().feedback), useAiFeedback: cur().useAiFeedback, aiFeedback: Object.assign({}, cur().aiFeedback) };
+    previewState.profileSnapshot = { feedback: Object.assign({}, cur().feedback), useAiFeedback: cur().useAiFeedback, aiFeedback: Object.assign({}, cur().aiFeedback), manualFeedback: Object.assign({}, cur().manualFeedback) };
     document.getElementById("previewOverlay").classList.add("open");
     renderPreviewCurrent();
   }
@@ -2934,7 +3831,7 @@
 
     var headerSnapshot = headerSnapshotForPdf();
     var meta = MODE_META[state.mode];
-    var profileSnapshotForZip = { feedback: Object.assign({}, cur().feedback), useAiFeedback: cur().useAiFeedback, aiFeedback: Object.assign({}, cur().aiFeedback) };
+    var profileSnapshotForZip = { feedback: Object.assign({}, cur().feedback), useAiFeedback: cur().useAiFeedback, aiFeedback: Object.assign({}, cur().aiFeedback), manualFeedback: Object.assign({}, cur().manualFeedback) };
     var fileBase = exportFileBase();
 
     setStatus("Building " + list.length + " individual PDF" + (list.length===1?"":"s") + "\u2026", "info");
@@ -3170,6 +4067,7 @@
     renderLegend();
     renderSubjectSelect();
     applySubjectAndModeUI();
+    initAuthRouting();
   }
 
   init();

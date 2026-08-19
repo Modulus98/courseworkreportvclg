@@ -1,8 +1,15 @@
-# Student Mark Record
+# Student Mark Record & Insights Dashboard
 
-A single-file web app for building Half-Semester and Final Results mark reports from an institutional marksheet (Google Sheets, Google Drive, Dropbox, GitHub, OneDrive, or a plain uploaded file). Everything runs in your browser — no backend, no data ever sent to a server other than the Google Sheets/Drive link you point it at and, if you use the email feature, Gmail's own API.
+A single-file web app for building Half-Semester and Final Results mark reports from an institutional marksheet, plus a student-facing dashboard showing a six-axis "hexagon" competency breakdown once you choose to publish it. Everything runs in your browser — no backend server of ours; the only external services involved are Google Sheets/Drive (for loading your marksheet), Gmail's API (if you use the email feature), Anthropic's API (if you use AI-generated feedback), and Firebase (Authentication + Firestore, for the student dashboard).
 
-Open `index.html` locally and it mostly works, with one exception: pasting a **Link** to fetch a marksheet requires the page to be loaded from a real `https://` address, not opened directly from your file system. Deploying this repo (see below) fixes that, and is also required for the Gmail sending feature.
+**Important change: this app now requires a one-time Firebase setup before *anyone* — including you as admin — can get past the login screen.** Previously Firebase was optional and only needed for publishing; now the whole app sits behind a sign-in gate, so this is a hard requirement from the very first use, not an optional add-on.
+
+## How it works
+
+- **One shared login screen** — the only URL you give out, to anyone.
+- **Students** sign in with **Google**. If they have published results, they see their own grade, marks breakdown, feedback, and hexagon chart. Nothing else — not other students' data, not the admin tool.
+- **You (admin)** sign in with the **email + password** account you create in Firebase Authentication. This takes you to the full tool: load a marksheet, define assessments, tag hexagon competencies, generate feedback, send emails, and publish results live to the student dashboard.
+- Nothing is visible to students until you explicitly click **Publish** from your own signed-in session.
 
 ## Deploying (recommended: Vercel)
 
@@ -18,17 +25,32 @@ Every time you push a change to this repo, Vercel redeploys automatically.
 
 Repo **Settings → Pages → Source: Deploy from a branch → main / (root)**. Your app will be live at `https://yourusername.github.io/repo-name/`.
 
+## Required setup: Firebase (do this first)
+
+Nobody can sign in — student or admin — until this is done, since the login screen itself needs to know which Firebase project to talk to.
+
+1. Open `index.html` in a text editor, find the `FIREBASE_CONFIG` object near the top of the `<script>` section, and note it's currently empty.
+2. Follow the full walkthrough (project creation, enabling Google + Email/Password sign-in, creating your admin account, Firestore security rules, getting your config values) — this is written out in full inside the app itself: open the login screen, expand **"Firebase isn't configured yet"**, and it's all there, including the exact security rules to paste into Firestore.
+3. Paste your six config values into the `FIREBASE_CONFIG` object in the file, save, and push the change (Vercel/GitHub Pages redeploys automatically).
+
+The Firestore security rules are what actually enforce "students only ever see their own results" — not anything in the page's own JavaScript, which anyone could inspect.
+
 ## Using the email feature
 
-Sending emails needs a one-time Google Cloud setup (so the app can send from your own Gmail/Google Workspace account, rather than through a third-party relay). Once you have your Vercel/Pages URL from above:
+Sending emails needs a separate one-time Google Cloud setup (so the app can send from your own Gmail/Google Workspace account, rather than through a third-party relay).
 
-1. Open the app at that URL, go to **4. Send by email**.
-2. Click **"Show me how to set this up"** for the full step-by-step Google Cloud Console walkthrough (built into the app itself, so it's there whenever you need it).
-3. You'll register your deployed URL as an **Authorized JavaScript origin** during that setup — this is exactly why the app needs to be hosted before this feature can work.
+1. Once signed in as admin, go to **5. Send by email**.
+2. Click **"Show me how to set this up"** for the full step-by-step Google Cloud Console walkthrough (built into the app itself).
+3. You'll register your deployed URL as an **Authorized JavaScript origin** during that setup — this is exactly why the app needs to be hosted, not opened as a local file.
+
+## Using AI-generated feedback
+
+Optional — under **3. Feedback wording per grade**, toggle "Use AI-generated feedback" and paste in your own Anthropic API key (not saved anywhere, session-only, unlike the Firebase/Google settings above which are meant to be public/embedded).
 
 ## What's in this repo
 
-- `index.html` — the entire app. Everything (styles, logic, PDF generation, Google sign-in) is in this one file.
+- `index.html` — the entire app: admin tool, student dashboard, and the login gate between them, all in this one file.
 - `README.md` — this file.
 
-There's nothing else to install or configure to run it locally or host it.
+There's nothing else to install or configure to run it locally or host it, beyond the Firebase setup above.
+
