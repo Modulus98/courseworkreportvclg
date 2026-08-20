@@ -510,6 +510,7 @@
         <h1>Your Results</h1>
       </div>
     </div>
+    <div class="notice-banner" style="margin-top:10px;">The system is currently in the testing phase.</div>
   </div>
   <div id="studentReportsList"></div>
 </div>
@@ -659,6 +660,30 @@
       <div class="card-body">
         <p class="card-hint">Maps your assessments onto six competency axes for the student dashboard (separate from ViTrox LMS's official release) &mdash; Teamwork, Knowledge, Problem Solving, Critical Thinking, Attitude, and Numeracy. Tag each assessment below; some need a question-mix split since a single quiz can touch more than one axis.</p>
 
+        <details class="notice-banner" style="margin-bottom:16px;">
+          <summary style="cursor:pointer; font-weight:600;">What to have ready before you start (checklist)</summary>
+          <div style="margin-top:10px; font-size:13px; line-height:1.6;">
+            <p style="margin:0 0 4px; font-weight:600;">Per assessment (once each, applies to every student):</p>
+            <ul style="margin:0 0 10px; padding-left:20px;">
+              <li>Confirm the type &mdash; Quiz/Test (Numeracy only) or Assignment/Other (all tags available)</li>
+              <li>Question mix % &mdash; either your own estimate, or <strong>the actual question paper</strong> (PDF/photo) so Claude can read and suggest it</li>
+            </ul>
+            <p style="margin:0 0 4px; font-weight:600;">Per student (the harder-to-source data):</p>
+            <ul style="margin:0 0 10px; padding-left:20px;">
+              <li><strong>Consultation hours</strong> &mdash; a sign-in log, calendar, or your own record of who attended</li>
+              <li><strong>Plagiarism %</strong> &mdash; a Turnitin/similarity score, if you use one (leave blank if you don't)</li>
+              <li><strong>Careless-mistake %</strong> &mdash; review the student's marked script yourself, have <strong>the scanned answer script</strong> ready for Claude to read, or just type your own perception in plain language and let Claude estimate it</li>
+            </ul>
+            <p style="margin:0 0 4px; font-weight:600;">If using AI to help with any of the above:</p>
+            <ul style="margin:0; padding-left:20px;">
+              <li>Your own Anthropic API key (pasted in once per session, never saved)</li>
+              <li>Scanned question papers, one per assessment</li>
+              <li>Scanned answer scripts, one per student per assessment &mdash; name files so the Student ID appears (e.g. <code>DCS2606019_Quiz1.pdf</code>) so they auto-match</li>
+            </ul>
+            <p style="margin:10px 0 0; font-style:italic;">Everything above is optional &mdash; if a piece of data is missing, that axis just shows "&mdash;" for that student instead of a wrong number. You don't need all of this ready on day one.</p>
+          </div>
+        </details>
+
         <table class="plain" id="hexagonAssessmentTable">
           <thead><tr>
             <th style="width:22%">Assessment</th>
@@ -668,11 +693,12 @@
           <tbody id="hexagonAssessmentRows"></tbody>
         </table>
 
-        <p class="card-hint" style="margin-top:16px;">Per-student inputs &mdash; consultation hours (ideal: 4/semester), plagiarism % (from Turnitin or similar, if used), and, for Numeracy, roughly what share of marks lost on each assessment came down to careless mistakes rather than a real gap in understanding.</p>
+        <p class="card-hint" style="margin-top:16px;">Per-student inputs &mdash; consultation hours (ideal: 4/semester), plagiarism % (from Turnitin or similar, if used), and, for Numeracy, roughly what share of marks lost on each assessment came down to careless mistakes rather than a real gap in understanding. The last two columns let you type your own read on a student in plain language and have Claude suggest numbers for the columns above &mdash; reusing the same API key as the AI-assisted analysis below.</p>
         <table class="plain" id="hexagonStudentTable">
           <thead><tr id="hexagonStudentHeadRow"></tr></thead>
           <tbody id="hexagonStudentRows"></tbody>
         </table>
+        <div id="hexagonPerceptionStatus" role="status"></div>
 
         <div class="ai-feedback-section">
           <p class="card-hint" style="font-weight:600; color:var(--ink);">AI-assisted analysis (optional)</p>
@@ -1488,7 +1514,7 @@
 
     var headRow = document.getElementById("hexagonStudentHeadRow");
     headRow.innerHTML = "";
-    ["Name", "Consultation hrs", "Plagiarism %"].concat(numeracyAssessments.map(function(a){ return a.name + " careless %"; })).forEach(function(label){
+    ["Name", "Consultation hrs", "Plagiarism %"].concat(numeracyAssessments.map(function(a){ return a.name + " careless %"; })).concat(["Your perception", ""]).forEach(function(label){
       var th = document.createElement("th");
       th.textContent = label;
       headRow.appendChild(th);
@@ -1497,7 +1523,7 @@
     var tbody = document.getElementById("hexagonStudentRows");
     tbody.innerHTML = "";
     list.forEach(function(s){
-      if(!profile.hexagonStudentData[s.id]) profile.hexagonStudentData[s.id] = { consultationHours: null, plagiarismPct: null, carelessPct: {} };
+      if(!profile.hexagonStudentData[s.id]) profile.hexagonStudentData[s.id] = { consultationHours: null, plagiarismPct: null, perceptionNote: "", carelessPct: {} };
       var data = profile.hexagonStudentData[s.id];
       if(!data.carelessPct) data.carelessPct = {};
 
@@ -1545,6 +1571,28 @@
         td.appendChild(input);
         tr.appendChild(td);
       });
+
+      var tdPerception = document.createElement("td");
+      var perceptionArea = document.createElement("textarea");
+      perceptionArea.rows = 1;
+      perceptionArea.className = "row-input";
+      perceptionArea.style.minWidth = "180px";
+      perceptionArea.placeholder = "e.g. very focused in class but rushes under time pressure, no plagiarism concerns, hasn't come to consultation\u2026";
+      perceptionArea.value = data.perceptionNote || "";
+      perceptionArea.addEventListener("input", function(){
+        data.perceptionNote = perceptionArea.value;
+        saveConfig();
+      });
+      tdPerception.appendChild(perceptionArea);
+      tr.appendChild(tdPerception);
+
+      var tdSuggest = document.createElement("td");
+      var suggestBtn = document.createElement("button");
+      suggestBtn.type = "button"; suggestBtn.className = "btn secondary";
+      suggestBtn.textContent = "Suggest";
+      suggestBtn.addEventListener("click", function(){ analyzePerceptionForStudent(s, data, numeracyAssessments, suggestBtn); });
+      tdSuggest.appendChild(suggestBtn);
+      tr.appendChild(tdSuggest);
 
       tbody.appendChild(tr);
     });
@@ -1699,6 +1747,101 @@
     var el = document.getElementById("ansStatus");
     if(!msg){ el.className = ""; el.textContent = ""; return; }
     el.className = type || "info"; el.textContent = msg;
+  }
+
+  function setHexagonPerceptionStatus(msg, type){
+    var el = document.getElementById("hexagonPerceptionStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info"; el.textContent = msg;
+  }
+
+  function buildPerceptionAnalysisPrompt(student, numeracyAssessments, note){
+    var assessmentList = numeracyAssessments.map(function(a){ return a.name; }).join(", ");
+    return (
+      "A lecturer has shared their own observations about a student, to help estimate a few specific " +
+      "numeric inputs for a student competency-tracking system. Base your answer ONLY on what's actually " +
+      "stated or clearly implied below - don't invent details that aren't mentioned, and use null for " +
+      "anything the note doesn't give enough information to estimate.\n\n" +
+      "Lecturer's note about " + student.name + ":\n\"" + note + "\"\n\n" +
+      "Fields to estimate:\n" +
+      "- consultationHours: hours of consultation/office-hours attendance this semester (ideal benchmark " +
+      "is 4 hours) - only if the note describes their attendance or frequency.\n" +
+      "- plagiarismPct (0-100): percentage of submitted work affected by plagiarism/originality concerns - " +
+      "only if genuinely mentioned.\n" +
+      (numeracyAssessments.length
+        ? "- For each of these assessments [" + assessmentList + "], a carelessPct (0-100): percentage of " +
+          "marks lost on that specific assessment due to carelessness rather than a real gap in " +
+          "understanding - only if mentioned.\n"
+        : "") +
+      "\nRespond with ONLY a JSON object in exactly this format, no other text:\n" +
+      '{"consultationHours": <number or null>, "plagiarismPct": <number or null>, "carelessByAssessment": [' +
+      numeracyAssessments.map(function(a){ return '{"assessment": "' + a.name.replace(/"/g, '\\"') + '", "carelessPct": <number or null>}'; }).join(", ") +
+      "]}"
+    );
+  }
+
+  function analyzePerceptionForStudent(student, data, numeracyAssessments, btn){
+    if(!claudeApiKey.trim()){ setHexagonPerceptionStatus("Paste your Anthropic API key in step 3 first \u2014 it's reused here.", "warn"); return; }
+    var note = (data.perceptionNote || "").trim();
+    if(!note){ setHexagonPerceptionStatus("Type your perception of " + student.name + " first.", "warn"); return; }
+
+    var model = document.getElementById("aiModelSelect").value;
+    btn.disabled = true;
+    setHexagonPerceptionStatus("Analyzing your notes on " + student.name + "\u2026", "info");
+
+    fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": claudeApiKey.trim(),
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: model,
+        max_tokens: 400,
+        messages: [{ role: "user", content: buildPerceptionAnalysisPrompt(student, numeracyAssessments, note) }]
+      })
+    }).then(function(res){
+      if(!res.ok){
+        return res.json().catch(function(){ return {}; }).then(function(errBody){
+          throw new Error((errBody.error && errBody.error.message) || ("HTTP " + res.status));
+        });
+      }
+      return res.json();
+    }).then(function(resData){
+      var text = resData.content && resData.content[0] && resData.content[0].text;
+      if(!text) throw new Error("No text returned");
+      var cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "");
+      var parsed;
+      try{ parsed = JSON.parse(cleaned); }
+      catch(e){ throw new Error("Couldn't parse Claude's response as JSON: " + text.slice(0, 200)); }
+
+      var applied = [];
+      if(parsed.consultationHours != null){ data.consultationHours = Number(parsed.consultationHours); applied.push("consultation hours"); }
+      if(parsed.plagiarismPct != null){ data.plagiarismPct = Number(parsed.plagiarismPct); applied.push("plagiarism %"); }
+      (parsed.carelessByAssessment || []).forEach(function(item){
+        if(item && item.assessment && item.carelessPct != null){
+          if(!data.carelessPct) data.carelessPct = {};
+          data.carelessPct[item.assessment] = Number(item.carelessPct);
+          applied.push(item.assessment + " careless %");
+        }
+      });
+
+      saveConfig();
+      renderHexagonStudentTable(currentSortedFilteredStudents());
+      renderHexagonPreview(currentSortedFilteredStudents());
+      setHexagonPerceptionStatus(
+        applied.length
+          ? ("Suggested " + applied.join(", ") + " for " + student.name + " \u2014 review before relying on it.")
+          : ("Nothing in that note gave Claude enough to estimate anything for " + student.name + "."),
+        "info"
+      );
+    }).catch(function(err){
+      setHexagonPerceptionStatus("Error: " + (err && err.message ? err.message : err), "error");
+    }).then(function(){
+      btn.disabled = false;
+    });
   }
 
   function populateAnalysisAssessmentSelects(){
