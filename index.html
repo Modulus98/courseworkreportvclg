@@ -751,9 +751,9 @@
         </div>
         <div id="hexagonPreviewChart" style="max-width:360px;"></div>
         <div class="btn-row" style="margin-top:14px;">
-          <button class="btn secondary" id="previewAsStudentBtn" type="button">Preview full student dashboard for this student&hellip;</button>
+          <button class="btn secondary" id="previewAsStudentBtn" type="button">Preview student dashboard&hellip;</button>
         </div>
-        <p class="card-hint">Shows exactly what this student will see, using your current data as it stands right now &mdash; no need to publish or ask a student to check for you. Uses the same rendering as the real student dashboard.</p>
+        <p class="card-hint">Opens on the selected student, with Prev/Next to step through the whole class from there &mdash; shows exactly what each student will see, using your current data as it stands right now. No need to publish or ask a student to check for you.</p>
       </div>
     </details>
 
@@ -920,6 +920,15 @@
     </div>
     <div class="preview-banner">This is a preview only &mdash; nothing has been published. It reflects your current data exactly as it stands right now.</div>
     <div class="preview-body-content" id="studentPreviewContent"></div>
+    <div class="preview-footer">
+      <div class="preview-nav">
+        <button type="button" class="btn secondary" id="studentPreviewPrevBtn">&larr; Prev</button>
+        <button type="button" class="btn secondary" id="studentPreviewNextBtn">Next &rarr;</button>
+      </div>
+      <div class="preview-nav">
+        <span class="mono-note" id="studentPreviewCounter"></span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1624,31 +1633,52 @@
   document.getElementById("hexagonPreviewSelect").addEventListener("change", function(){ renderHexagonPreview(); });
 
   // ---------------- Admin "preview as student" - reuses the real student-dashboard rendering ----------------
-  function openStudentPreview(student){
+  var studentPreviewState = { list: [], index: 0 };
+
+  function renderStudentPreviewCurrent(){
     var profile = cur();
     var subj = currentSubject();
+    var student = studentPreviewState.list[studentPreviewState.index];
     var data = buildStudentDashboardData(student, profile, subj);
 
     document.getElementById("studentPreviewTitle").textContent = student.name || "(no name)";
-    document.getElementById("studentPreviewSub").textContent = student.email ? student.email : "(no email on file)";
+    document.getElementById("studentPreviewSub").textContent =
+      "Student " + (studentPreviewState.index+1) + " of " + studentPreviewState.list.length +
+      (student.email ? "  \u00b7  " + student.email : "  \u00b7  (no email on file)");
     var content = document.getElementById("studentPreviewContent");
     content.innerHTML = "";
     content.appendChild(buildStudentReportCard(data));
 
+    document.getElementById("studentPreviewCounter").textContent = (studentPreviewState.index+1) + " / " + studentPreviewState.list.length;
+    document.getElementById("studentPreviewPrevBtn").disabled = studentPreviewState.index === 0;
+    document.getElementById("studentPreviewNextBtn").disabled = studentPreviewState.index === studentPreviewState.list.length - 1;
+  }
+
+  function openStudentPreview(list, startIndex){
+    studentPreviewState.list = list;
+    studentPreviewState.index = Math.max(0, Math.min(startIndex||0, list.length-1));
     document.getElementById("studentPreviewOverlay").classList.add("open");
+    renderStudentPreviewCurrent();
+  }
+  function navigateStudentPreview(delta){
+    var next = studentPreviewState.index + delta;
+    if(next < 0 || next >= studentPreviewState.list.length) return;
+    studentPreviewState.index = next;
+    renderStudentPreviewCurrent();
   }
   function closeStudentPreview(){
     document.getElementById("studentPreviewOverlay").classList.remove("open");
   }
 
   document.getElementById("previewAsStudentBtn").addEventListener("click", function(){
-    var profile = cur();
     var list = currentSortedFilteredStudents();
+    if(!list.length){ setStatus("Load a marksheet first.", "warn"); return; }
     var selectedId = document.getElementById("hexagonPreviewSelect").value;
-    var student = list.find(function(s){ return s.id === selectedId; });
-    if(!student){ setStatus("Pick a student in the \u201cPreview student\u201d dropdown above first.", "warn"); return; }
-    openStudentPreview(student);
+    var startIndex = list.findIndex(function(s){ return s.id === selectedId; });
+    openStudentPreview(list, startIndex);
   });
+  document.getElementById("studentPreviewPrevBtn").addEventListener("click", function(){ navigateStudentPreview(-1); });
+  document.getElementById("studentPreviewNextBtn").addEventListener("click", function(){ navigateStudentPreview(1); });
   document.getElementById("studentPreviewCloseBtn").addEventListener("click", closeStudentPreview);
   document.getElementById("studentPreviewOverlay").addEventListener("click", function(e){
     if(e.target === this) closeStudentPreview();
@@ -1656,6 +1686,8 @@
   document.addEventListener("keydown", function(e){
     if(!document.getElementById("studentPreviewOverlay").classList.contains("open")) return;
     if(e.key === "Escape") closeStudentPreview();
+    else if(e.key === "ArrowLeft") navigateStudentPreview(-1);
+    else if(e.key === "ArrowRight") navigateStudentPreview(1);
   });
 
   // ---------------- AI-assisted hexagon analysis (question papers + answer scripts) ----------------
@@ -3741,16 +3773,16 @@
 
     doc.setDrawColor(230,230,225);
     doc.setLineWidth(0.75);
-    doc.line(margin, pageHeight - 70, pageWidth - margin, pageHeight - 70);
+    doc.line(margin, pageHeight - 78, pageWidth - margin, pageHeight - 78);
 
     doc.setFont("helvetica","italic");
     doc.setFontSize(8);
     doc.setTextColor(150,150,140);
     var disclaimerWrapped = doc.splitTextToSize(
-      "The final coursework marks are subject to the announcement by the examination board.",
+      "The final coursework marks are subject to the announcement by the examination board. The system is currently in the testing phase.",
       pageWidth - margin*2
     );
-    doc.text(disclaimerWrapped, margin, pageHeight - 60);
+    doc.text(disclaimerWrapped, margin, pageHeight - 68);
 
     doc.setFont("helvetica","normal");
     doc.setFontSize(8.5);
