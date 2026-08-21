@@ -502,7 +502,8 @@
   <div class="letterhead">
     <div class="subject-bar">
       <span id="studentWelcomeLabel" class="mono-note"></span>
-      <button type="button" class="icon-btn-sm" id="studentSignOutBtn" style="margin-left:auto;">Sign out</button>
+      <button type="button" class="icon-btn-sm" id="backToAdminBtn" style="margin-left:auto; display:none;">&larr; Back to admin</button>
+      <button type="button" class="icon-btn-sm" id="studentSignOutBtn">Sign out</button>
     </div>
     <div class="letterhead-top">
       <div class="title-block">
@@ -511,6 +512,10 @@
       </div>
     </div>
     <div class="notice-banner" style="margin-top:10px;">The system is currently in the testing phase.</div>
+  </div>
+  <div class="mode-toggle" id="studentModeToggle" style="display:none;" role="tablist" aria-label="Report period">
+    <button type="button" class="mode-btn" role="tab" data-mode="half" aria-selected="true">Half-Semester</button>
+    <button type="button" class="mode-btn" role="tab" data-mode="final" aria-selected="false">End of Semester</button>
   </div>
   <div id="studentReportsList"></div>
 </div>
@@ -522,7 +527,8 @@
   <div class="letterhead">
     <div class="subject-bar">
       <span id="adminWelcomeLabel" class="mono-note"></span>
-      <button type="button" class="icon-btn-sm" id="adminSignOutBtn" style="margin-left:auto;">Sign out</button>
+      <button type="button" class="icon-btn-sm" id="viewAsMyStudentBtn" style="margin-left:auto;">View my Student Dashboard</button>
+      <button type="button" class="icon-btn-sm" id="adminSignOutBtn">Sign out</button>
     </div>
     <div class="subject-bar">
       <label for="subjectSelect">Subject</label>
@@ -599,7 +605,7 @@
         <div class="mapping-grid" id="idNameMappingGrid"></div>
 
         <table class="plain">
-          <thead><tr><th>From column</th><th style="width:32%">Report name</th><th>Max marks</th><th>Weight %</th><th></th></tr></thead>
+          <thead><tr><th>From column</th><th style="width:32%">Report name</th><th>Max marks</th><th>Weight %</th><th style="width:90px">Mask for students</th><th></th></tr></thead>
           <tbody id="assessmentRows"></tbody>
         </table>
         <div class="btn-row" id="addColumnRow">
@@ -821,6 +827,57 @@
       </div>
     </details>
 
+    <!-- Consultation scheduling -->
+    <details class="card" id="consultationCard" style="display:none;">
+      <summary>7. Consultation Scheduling</summary>
+      <div class="card-body">
+        <p class="card-hint">Syncs your real Google Calendar into a sanitized snapshot students can see, so they can request a consultation slot &mdash; the request is written to Firestore, not your calendar. You still book it yourself, for real, afterwards. Not live/real-time: it's exactly what your calendar looked like the moment you last clicked Sync, same as Publish.</p>
+
+        <div id="calendarSetupNotice" class="notice-banner">
+          This needs a one-time Google Calendar API setup (reuses the same Google Cloud project as the email feature) and, if you want the Chat notification, a Google Chat webhook.
+          <button type="button" class="btn secondary" id="showCalendarSetupBtn" style="margin-top:8px;">Show me how to set this up</button>
+        </div>
+
+        <div class="mapping-grid" style="margin-bottom:14px;">
+          <div class="mapping-field">
+            <label for="weeklyTargetHoursInput">Your weekly consultation target (hours)</label>
+            <input type="number" id="weeklyTargetHoursInput" min="0" step="0.5" placeholder="e.g. 5">
+          </div>
+          <div class="mapping-field">
+            <label for="chatWebhookUrlInput">Google Chat webhook URL (optional)</label>
+            <input type="text" id="chatWebhookUrlInput" placeholder="https://chat.googleapis.com/v1/spaces/...">
+          </div>
+        </div>
+        <p class="card-hint">The webhook posts a notification when a student submits a request. Fired directly from the student's browser, best-effort &mdash; Chat webhooks are documented mainly for server-side use, so delivery isn't guaranteed from here. Test it once set up and let me know if messages don't arrive.</p>
+
+        <div class="btn-row">
+          <button class="btn secondary" id="syncCalendarBtn" type="button">Sync Calendar</button>
+        </div>
+        <div id="calendarSyncStatus" role="status"></div>
+
+        <div id="weeklyHoursSummary" style="margin-top:16px; display:none;">
+          <div class="mapping-grid">
+            <div>
+              <div class="mono-note">Hours this week (Consultation: events)</div>
+              <div style="font-size:26px; font-family:var(--font-display);" id="hoursThisWeekDisplay">&mdash;</div>
+            </div>
+            <div>
+              <div class="mono-note">Hours remaining this week</div>
+              <div style="font-size:26px; font-family:var(--font-display);" id="hoursRemainingDisplay">&mdash;</div>
+            </div>
+          </div>
+          <p class="card-hint" id="lastSyncedNote"></p>
+        </div>
+
+        <p class="card-hint" style="margin-top:20px; font-weight:600; color:var(--ink);">Pending consultation requests</p>
+        <table class="plain" id="consultationRequestsTable">
+          <thead><tr><th>Student</th><th>Requested slot</th><th>Status</th><th></th></tr></thead>
+          <tbody id="consultationRequestsRows"></tbody>
+        </table>
+        <div id="consultationRequestsStatus" role="status"></div>
+      </div>
+    </details>
+
   </div>
 
   <div class="legend" id="legend"></div>
@@ -932,6 +989,19 @@
   </div>
 </div>
 
+<div class="preview-overlay" id="speedMathOverlay">
+  <div class="preview-panel" role="dialog" aria-modal="true" aria-labelledby="speedMathTitle" style="max-width:420px;">
+    <div class="preview-header">
+      <div>
+        <h2 id="speedMathTitle">60-Second Numeracy Challenge</h2>
+        <div class="sub">Just for practice &mdash; nothing here is saved or sent anywhere</div>
+      </div>
+      <button type="button" class="preview-close-btn" id="speedMathCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="preview-body-content" id="speedMathContent" style="text-align:center; padding:32px 24px; display:flex; flex-direction:column; align-items:center; gap:14px;"></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.8/dist/jspdf.plugin.autotable.min.js"></script>
@@ -947,11 +1017,11 @@
     onAuthStateChanged, signOut
   } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
   import {
-    getFirestore, doc, setDoc, serverTimestamp, collection, getDocs
+    getFirestore, doc, setDoc, getDoc, serverTimestamp, collection, getDocs, addDoc, updateDoc
   } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
   window.firebaseSDK = {
     initializeApp, getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider,
-    onAuthStateChanged, signOut, getFirestore, doc, setDoc, serverTimestamp, collection, getDocs
+    onAuthStateChanged, signOut, getFirestore, doc, setDoc, getDoc, serverTimestamp, collection, getDocs, addDoc, updateDoc
   };
   window.dispatchEvent(new Event("firebase-sdk-ready"));
 </script>
@@ -1126,6 +1196,7 @@
     currentSubjectId: null,
     googleClientId: "",  // shared across subjects - a one-time OAuth setup, not per-subject
     aiModel: "claude-haiku-4-5-20251001", // shared across subjects; the API key itself is NOT persisted (see claudeApiKey below)
+    weeklyTargetHours: null, // admin's own weekly consultation-hours target, for the dashboard only - never sent to Firestore
     // Firebase project config for the student dashboard - a one-time setup shared
     // across every subject, same as the Google Client ID. These values (apiKey,
     // authDomain, etc.) are meant to be public/embedded in client code by design -
@@ -1156,6 +1227,7 @@
         googleClientId: state.googleClientId,
         firebaseConfig: state.firebaseConfig,
         aiModel: state.aiModel,
+        weeklyTargetHours: state.weeklyTargetHours,
         subjects: state.subjects.map(function(su){
           var profiles = {};
           ["half","final"].forEach(function(k){
@@ -1209,6 +1281,7 @@
       if(parsed.mode === "half" || parsed.mode === "final") state.mode = parsed.mode;
       if(typeof parsed.googleClientId === "string") state.googleClientId = parsed.googleClientId;
       if(typeof parsed.aiModel === "string" && parsed.aiModel) state.aiModel = parsed.aiModel;
+      if(typeof parsed.weeklyTargetHours === "number") state.weeklyTargetHours = parsed.weeklyTargetHours;
       if(parsed.firebaseConfig && typeof parsed.firebaseConfig === "object") state.firebaseConfig = Object.assign({}, state.firebaseConfig, parsed.firebaseConfig);
       if(Array.isArray(parsed.subjects) && parsed.subjects.length){
         state.subjects = parsed.subjects.map(function(su){
@@ -1670,6 +1743,168 @@
     document.getElementById("studentPreviewOverlay").classList.remove("open");
   }
 
+  // ---------------- 60-second Numeracy speed-math game (student-facing, nothing saved) ----------------
+  var speedMathState = { timeLeft: 60, correct: 0, attempted: 0, currentProblem: null, timerId: null, active: false };
+
+  function generateMathProblem(){
+    var ops = ["+", "\u2212", "\u00d7"];
+    var op = ops[Math.floor(Math.random() * ops.length)];
+    var a, b, answer;
+    if(op === "+"){
+      a = Math.floor(Math.random() * 90) + 10; // 10-99
+      b = Math.floor(Math.random() * 90) + 10;
+      answer = a + b;
+    } else if(op === "\u2212"){
+      a = Math.floor(Math.random() * 90) + 10;
+      b = Math.floor(Math.random() * a); // 0..a-1, keeps the result non-negative
+      answer = a - b;
+    } else {
+      a = Math.floor(Math.random() * 12) + 2; // 2-13
+      b = Math.floor(Math.random() * 12) + 2;
+      answer = a * b;
+    }
+    return { text: a + " " + op + " " + b, answer: answer };
+  }
+
+  function renderSpeedMathStart(){
+    var content = document.getElementById("speedMathContent");
+    content.innerHTML = "";
+    var p = document.createElement("p");
+    p.textContent = "60 seconds. Simple arithmetic. See how many you can get right without rushing into careless slips.";
+    content.appendChild(p);
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "btn gold";
+    btn.textContent = "Start";
+    btn.addEventListener("click", startSpeedMath);
+    content.appendChild(btn);
+  }
+
+  function renderSpeedMathPlaying(){
+    var content = document.getElementById("speedMathContent");
+    content.innerHTML = "";
+
+    var timerEl = document.createElement("div");
+    timerEl.id = "speedMathTimerDisplay";
+    timerEl.style.fontSize = "13px";
+    timerEl.style.fontFamily = "var(--font-mono)";
+    timerEl.style.color = "var(--ink-soft)";
+    timerEl.textContent = speedMathState.timeLeft + "s left  \u00b7  " + speedMathState.correct + " / " + speedMathState.attempted + " correct";
+    content.appendChild(timerEl);
+
+    var problemEl = document.createElement("div");
+    problemEl.style.fontSize = "32px";
+    problemEl.style.fontFamily = "var(--font-display)";
+    problemEl.style.margin = "6px 0";
+    problemEl.textContent = speedMathState.currentProblem.text + " = ?";
+    content.appendChild(problemEl);
+
+    var input = document.createElement("input");
+    input.type = "number";
+    input.id = "speedMathAnswerInput";
+    input.className = "row-input mono";
+    input.style.fontSize = "20px";
+    input.style.textAlign = "center";
+    input.style.width = "140px";
+    input.addEventListener("keydown", function(e){
+      if(e.key === "Enter") submitSpeedMathAnswer();
+    });
+    content.appendChild(input);
+
+    var submitBtn = document.createElement("button");
+    submitBtn.type = "button"; submitBtn.className = "btn secondary";
+    submitBtn.textContent = "Submit";
+    submitBtn.addEventListener("click", submitSpeedMathAnswer);
+    content.appendChild(submitBtn);
+
+    input.focus();
+  }
+
+  function updateSpeedMathTimerDisplay(){
+    var el = document.getElementById("speedMathTimerDisplay");
+    if(el) el.textContent = speedMathState.timeLeft + "s left  \u00b7  " + speedMathState.correct + " / " + speedMathState.attempted + " correct";
+  }
+
+  function submitSpeedMathAnswer(){
+    if(!speedMathState.active) return;
+    var input = document.getElementById("speedMathAnswerInput");
+    if(!input || input.value.trim() === "") return;
+    speedMathState.attempted++;
+    if(parseInt(input.value, 10) === speedMathState.currentProblem.answer) speedMathState.correct++;
+    speedMathState.currentProblem = generateMathProblem();
+    renderSpeedMathPlaying();
+  }
+
+  function renderSpeedMathResults(){
+    var content = document.getElementById("speedMathContent");
+    content.innerHTML = "";
+    var accuracy = speedMathState.attempted > 0 ? Math.round((speedMathState.correct / speedMathState.attempted) * 100) : 0;
+
+    var scoreEl = document.createElement("div");
+    scoreEl.style.fontSize = "24px";
+    scoreEl.style.fontFamily = "var(--font-display)";
+    scoreEl.textContent = speedMathState.correct + " / " + speedMathState.attempted + " correct";
+    content.appendChild(scoreEl);
+
+    var accEl = document.createElement("p");
+    accEl.className = "card-hint";
+    accEl.textContent = speedMathState.attempted > 0
+      ? (accuracy + "% accuracy. " + (accuracy >= 85 ? "Sharp work \u2014 that's exactly the kind of consistency this axis rewards." : "Nice effort \u2014 a bit more practice at this pace and the slips will drop."))
+      : "Give it a go \u2014 even a few rounds helps.";
+    content.appendChild(accEl);
+
+    var btnRow = document.createElement("div");
+    btnRow.className = "btn-row";
+    var againBtn = document.createElement("button");
+    againBtn.type = "button"; againBtn.className = "btn gold";
+    againBtn.textContent = "Play again";
+    againBtn.addEventListener("click", startSpeedMath);
+    btnRow.appendChild(againBtn);
+    content.appendChild(btnRow);
+  }
+
+  function speedMathTick(){
+    speedMathState.timeLeft--;
+    if(speedMathState.timeLeft <= 0){
+      endSpeedMath();
+    } else {
+      updateSpeedMathTimerDisplay();
+    }
+  }
+
+  function startSpeedMath(){
+    speedMathState.timeLeft = 60;
+    speedMathState.correct = 0;
+    speedMathState.attempted = 0;
+    speedMathState.active = true;
+    speedMathState.currentProblem = generateMathProblem();
+    if(speedMathState.timerId) clearInterval(speedMathState.timerId);
+    speedMathState.timerId = setInterval(speedMathTick, 1000);
+    renderSpeedMathPlaying();
+  }
+
+  function endSpeedMath(){
+    speedMathState.active = false;
+    if(speedMathState.timerId){ clearInterval(speedMathState.timerId); speedMathState.timerId = null; }
+    renderSpeedMathResults();
+  }
+
+  function openSpeedMathGame(){
+    document.getElementById("speedMathOverlay").classList.add("open");
+    renderSpeedMathStart();
+  }
+  function closeSpeedMathGame(){
+    if(speedMathState.timerId){ clearInterval(speedMathState.timerId); speedMathState.timerId = null; }
+    speedMathState.active = false;
+    document.getElementById("speedMathOverlay").classList.remove("open");
+  }
+  document.getElementById("speedMathCloseBtn").addEventListener("click", closeSpeedMathGame);
+  document.getElementById("speedMathOverlay").addEventListener("click", function(e){
+    if(e.target === this) closeSpeedMathGame();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape" && document.getElementById("speedMathOverlay").classList.contains("open")) closeSpeedMathGame();
+  });
+
   document.getElementById("previewAsStudentBtn").addEventListener("click", function(){
     var list = currentSortedFilteredStudents();
     if(!list.length){ setStatus("Load a marksheet first.", "warn"); return; }
@@ -2084,6 +2319,15 @@
     "    match /publishLog/{logId} {\n" +
     "      allow read, write: if isAdmin();\n" +
     "    }\n" +
+    "    match /adminSettings/{settingId} {\n" +
+    "      allow read: if request.auth != null;\n" +
+    "      allow write: if isAdmin();\n" +
+    "    }\n" +
+    "    match /consultationRequests/{requestId} {\n" +
+    "      allow create: if request.auth != null && request.resource.data.studentEmail == request.auth.token.email;\n" +
+    "      allow read: if isAdmin() || (request.auth != null && resource.data.studentEmail == request.auth.token.email);\n" +
+    "      allow update: if isAdmin();\n" +
+    "    }\n" +
     "  }\n" +
     "}\n\n" +
     "This is what actually enforces \"students only see their own marks\" - not anything in this page's own JavaScript.\n\n" +
@@ -2146,7 +2390,11 @@
         document.getElementById("adminWelcomeLabel").textContent = "Signed in as " + user.email;
         document.getElementById("publishAdminEmailLabel").textContent = user.email;
         showAdminApp();
+        loadConsultationSettings();
+        renderConsultationRequests();
       } else if(currentAuthRole === "student"){
+        viewingAsAdminPreview = false;
+        document.getElementById("backToAdminBtn").style.display = "none";
         document.getElementById("studentWelcomeLabel").textContent = user.displayName || user.email;
         showStudentApp();
         loadStudentReports(user.email);
@@ -2184,6 +2432,25 @@
     if(firebaseAuthInstance) window.firebaseSDK.signOut(firebaseAuthInstance);
   });
 
+  // Lets an admin peek at their own real, Firestore-backed student dashboard
+  // without a separate sign-in - safe because the security rule matches on the
+  // auth token's email regardless of which provider issued it, so this only ever
+  // shows data already readable by this exact signed-in account.
+  var viewingAsAdminPreview = false;
+
+  document.getElementById("viewAsMyStudentBtn").addEventListener("click", function(){
+    if(!currentAuthUser) return;
+    viewingAsAdminPreview = true;
+    document.getElementById("studentWelcomeLabel").textContent = currentAuthUser.email + " (viewing as admin)";
+    document.getElementById("backToAdminBtn").style.display = "";
+    showStudentApp();
+    loadStudentReports(currentAuthUser.email);
+  });
+  document.getElementById("backToAdminBtn").addEventListener("click", function(){
+    viewingAsAdminPreview = false;
+    showAdminApp();
+  });
+
   // ---- Student dashboard rendering ----
   // Single source of truth for "what does this student's dashboard payload look
   // like" - used both when actually publishing to Firestore, and when the admin
@@ -2203,9 +2470,10 @@
       reportLabel: meta.pdfLabel,
       grade: student.grade.letter,
       percentage: round1(student.pct),
-      marks: student.marks.map(function(m){ return { name:m.name, max:m.max, weight:(m.weight!=null?m.weight:m.max), value:m.value, missing:m.missing }; }),
+      marks: student.marks.map(function(m){ return { name:m.name, max:m.max, weight:(m.weight!=null?m.weight:m.max), value:m.value, missing:m.missing, assessmentType:m.assessmentType, masked:m.masked }; }),
       feedback: feedbackTextFor(profile, student),
       hexagon: scores,
+      consultationHours: (hexData.consultationHours != null) ? hexData.consultationHours : null,
       lecturer: state.header.lecturer || ""
     };
   }
@@ -2263,7 +2531,10 @@
       } else {
         var contribution = (m.max > 0) ? (m.value / m.max) * w : 0;
         weightedAchievedSum += contribution;
-        tdAchieved.textContent = round1(contribution) + "%";
+        // Masking is opt-in per assessment (the checkbox in step 2), not inferred
+        // from assessment type - a solo presentation and a group assignment are
+        // both "assignment_other" but only one of them needs its mark hidden.
+        tdAchieved.textContent = m.masked ? "(***)" : (round1(contribution) + "%");
       }
       tr.appendChild(tdName); tr.appendChild(tdWeight); tr.appendChild(tdAchieved);
       tbody.appendChild(tr);
@@ -2293,6 +2564,46 @@
       chartDiv.style.marginTop = "16px";
       chartDiv.innerHTML = buildHexagonSVG(data.hexagon, 320);
       body.appendChild(chartDiv);
+
+      // Nudge toward practice specifically when it'd help - missing data or a
+      // score on the lower side - rather than showing this unconditionally.
+      var numeracyScore = data.hexagon.numeracy;
+      if(numeracyScore == null || numeracyScore < 75){
+        var gameWrap = document.createElement("div");
+        gameWrap.style.marginTop = "16px";
+        var gameBtn = document.createElement("button");
+        gameBtn.type = "button";
+        gameBtn.className = "btn secondary";
+        gameBtn.textContent = "Sharpen your Numeracy \u2014 60-second challenge";
+        gameBtn.addEventListener("click", function(){ openSpeedMathGame(); });
+        gameWrap.appendChild(gameBtn);
+        var gameHint = document.createElement("p");
+        gameHint.className = "card-hint";
+        gameHint.style.marginTop = "6px";
+        gameHint.textContent = "Just for practice \u2014 nothing here is saved, scored, or sent anywhere.";
+        gameWrap.appendChild(gameHint);
+        body.appendChild(gameWrap);
+      }
+    }
+
+    // Consultation booking - only offered while the student hasn't already
+    // logged past the 4-hour ideal for this report. Loads asynchronously since
+    // it needs a Firestore read for the admin's synced calendar snapshot.
+    if(data.consultationHours == null || data.consultationHours <= 4){
+      var bookingWrap = document.createElement("div");
+      bookingWrap.style.marginTop = "16px";
+      bookingWrap.style.paddingTop = "14px";
+      bookingWrap.style.borderTop = "1px solid var(--rule)";
+      var bookingTitle = document.createElement("p");
+      bookingTitle.style.fontWeight = "600";
+      bookingTitle.style.margin = "0 0 8px";
+      bookingTitle.textContent = "Request a consultation slot";
+      bookingWrap.appendChild(bookingTitle);
+      var bookingContent = document.createElement("div");
+      bookingContent.textContent = "Loading available times\u2026";
+      bookingWrap.appendChild(bookingContent);
+      body.appendChild(bookingWrap);
+      loadConsultationBookingUI(bookingContent, data);
     }
 
     var disclaimerP = document.createElement("p");
@@ -2309,19 +2620,94 @@
     return card;
   }
 
+  var currentStudentMode = "half";
+  var currentStudentBySubject = null;
+  var currentStudentReportsArea = null;
+
+  function renderStudentSubjectReports(reports){
+    if(!currentStudentReportsArea) return;
+    currentStudentReportsArea.innerHTML = "";
+    var matching = reports.filter(function(data){ return data.mode === currentStudentMode; });
+    if(!matching.length){
+      var p = document.createElement("p");
+      p.className = "card-hint";
+      p.textContent = currentStudentMode === "half"
+        ? "Your half-semester results haven't been published yet."
+        : "Your end-of-semester results haven't been published yet.";
+      currentStudentReportsArea.appendChild(p);
+      return;
+    }
+    matching.forEach(function(data){ currentStudentReportsArea.appendChild(buildStudentReportCard(data)); });
+  }
+
+  document.querySelectorAll('#studentModeToggle .mode-btn').forEach(function(btn){
+    btn.addEventListener("click", function(){
+      currentStudentMode = btn.dataset.mode;
+      document.querySelectorAll('#studentModeToggle .mode-btn').forEach(function(b){
+        b.setAttribute("aria-selected", b === btn ? "true" : "false");
+      });
+      if(currentStudentBySubject){
+        var select = document.getElementById("studentSubjectSelect");
+        var key = select ? select.value : Object.keys(currentStudentBySubject)[0];
+        renderStudentSubjectReports(currentStudentBySubject[key]);
+      }
+    });
+  });
+
   function loadStudentReports(email){
     var container = document.getElementById("studentReportsList");
     container.innerHTML = '<p class="card-hint">Loading your results\u2026</p>';
+    document.getElementById("studentModeToggle").style.display = "none";
+    currentStudentMode = "half";
+    document.querySelectorAll('#studentModeToggle .mode-btn').forEach(function(b){
+      b.setAttribute("aria-selected", b.dataset.mode === "half" ? "true" : "false");
+    });
     var reportsCol = window.firebaseSDK.collection(firebaseDb, "publishedResults", email, "reports");
     window.firebaseSDK.getDocs(reportsCol).then(function(snapshot){
       if(snapshot.empty){
         container.innerHTML = '<p class="card-hint">No results have been published for you yet. Check back after your lecturer releases them.</p>';
         return;
       }
-      container.innerHTML = "";
+      var bySubject = {};
+      var subjectOrder = [];
       snapshot.forEach(function(docSnap){
-        container.appendChild(buildStudentReportCard(docSnap.data()));
+        var data = docSnap.data();
+        var key = data.subjectName || "(Untitled subject)";
+        if(!bySubject[key]){ bySubject[key] = []; subjectOrder.push(key); }
+        bySubject[key].push(data);
       });
+      currentStudentBySubject = bySubject;
+
+      container.innerHTML = "";
+      document.getElementById("studentModeToggle").style.display = "";
+
+      if(subjectOrder.length > 1){
+        var switcherWrap = document.createElement("div");
+        switcherWrap.className = "mapping-field";
+        switcherWrap.style.maxWidth = "320px";
+        switcherWrap.style.marginBottom = "16px";
+        var label = document.createElement("label");
+        label.setAttribute("for", "studentSubjectSelect");
+        label.textContent = "Subject";
+        switcherWrap.appendChild(label);
+        var select = document.createElement("select");
+        select.id = "studentSubjectSelect";
+        subjectOrder.forEach(function(name){
+          var opt = document.createElement("option");
+          opt.value = name; opt.textContent = name;
+          select.appendChild(opt);
+        });
+        select.addEventListener("change", function(){ renderStudentSubjectReports(bySubject[select.value]); });
+        switcherWrap.appendChild(select);
+        container.appendChild(switcherWrap);
+      }
+
+      var reportsArea = document.createElement("div");
+      reportsArea.id = "studentSubjectReportsArea";
+      container.appendChild(reportsArea);
+      currentStudentReportsArea = reportsArea;
+
+      renderStudentSubjectReports(bySubject[subjectOrder[0]]);
     }).catch(function(err){
       container.innerHTML = '<p class="card-hint">Couldn\u2019t load your results: ' + (err && err.message ? err.message : err) + "</p>";
     });
@@ -2388,6 +2774,401 @@
       setPublishStatus("Error: " + (err && err.message ? err.message : err), "error");
     });
   });
+
+  // ---------------- Consultation scheduling: calendar sync + weekly dashboard + approvals ----------------
+  var calendarAccessToken = null;
+  var calendarTokenClient = null;
+
+  var CALENDAR_SETUP_INSTRUCTIONS =
+    "GOOGLE CALENDAR API (reuses your existing Google Cloud project from the email setup)\n\n" +
+    "1. Go to console.cloud.google.com and open the SAME project you used for Gmail sending.\n" +
+    "2. APIs & Services -> Library -> search \"Google Calendar API\" -> Enable.\n" +
+    "3. APIs & Services -> OAuth consent screen -> Data Access / Scopes -> Add or Remove Scopes ->\n" +
+    "   search \"calendar\" -> tick \"See events on all your calendars\" (calendar.events.readonly) -> Save.\n" +
+    "4. Nothing else to create - the SAME Client ID from step 5 (Send by email) is reused here automatically.\n" +
+    "   If your app is still in \"Testing\" publishing status, make sure your own Google account is listed\n" +
+    "   under \"Test users\" (same place you'd have added it for Gmail).\n\n" +
+    "GOOGLE CHAT WEBHOOK (optional - only needed for the notification when a student books)\n\n" +
+    "1. Open Google Chat (chat.google.com) and go to the space where you want notifications\n" +
+    "   (or create a new one just for this).\n" +
+    "2. Click the space name at the top -> Apps & integrations -> Webhooks -> Add webhooks.\n" +
+    "3. Give it a name (e.g. \"Consultation requests\"), optionally an avatar -> Save.\n" +
+    "4. Copy the generated URL (looks like https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...)\n" +
+    "   and paste it into the \"Google Chat webhook URL\" field above.\n\n" +
+    "Note: Chat webhooks are documented mainly for server-side use. This app calls it directly from the\n" +
+    "student's browser, best-effort - test it once set up (submit a real booking request) and confirm the\n" +
+    "message actually arrives in your Chat space. If it doesn't, this specific piece isn't achievable without\n" +
+    "adding a small server-side proxy, which is a genuine step beyond this app's current architecture.\n\n" +
+    "IMPORTANT - Firestore rules update needed\n\n" +
+    "Booking requests and the synced calendar snapshot need two new Firestore rules (adminSettings,\n" +
+    "consultationRequests). Go back to the login screen's \"Firebase isn't configured yet\" guide (or your\n" +
+    "Firestore Rules tab) - the full, up-to-date rules text is there. If you set up Firebase before this\n" +
+    "feature existed, you'll need to re-paste the updated version.";
+
+  document.getElementById("showCalendarSetupBtn").addEventListener("click", function(){
+    var notice = document.getElementById("calendarSetupNotice");
+    var existing = document.getElementById("calendarSetupInstructions");
+    if(existing){ existing.remove(); this.textContent = "Show me how to set this up"; return; }
+    var box = document.createElement("div");
+    box.id = "calendarSetupInstructions";
+    box.style.marginTop = "10px";
+    box.style.whiteSpace = "pre-wrap";
+    box.style.fontSize = "12px";
+    box.style.fontFamily = "var(--font-mono)";
+    box.textContent = CALENDAR_SETUP_INSTRUCTIONS;
+    notice.appendChild(box);
+    this.textContent = "Hide instructions";
+  });
+
+  // Only "Consultation: <Name>" counts as a real, hour-bearing consultation slot.
+  // Bare "Consultation" (no colon/name) is deliberately excluded from the hours
+  // tally - it still shows as a generic busy block, just isn't counted.
+  function categorizeCalendarEvent(title){
+    var t = String(title || "").trim();
+    var m = /^Consultation:\s*(.+)/i.exec(t);
+    if(m) return { category: "consultation", name: m[1].trim() };
+    if(/^Class\b/i.test(t)) return { category: "class", name: null };
+    if(/^Meeting\b/i.test(t)) return { category: "meeting", name: null };
+    return { category: "other", name: null }; // bare "Consultation", "Other Important Matters", or anything else
+  }
+
+  function eventDurationHours(ev){
+    if(!ev.start || !ev.end) return 0;
+    var s = new Date(ev.start.dateTime || ev.start.date);
+    var e = new Date(ev.end.dateTime || ev.end.date);
+    var ms = e.getTime() - s.getTime();
+    return ms > 0 ? ms / 3600000 : 0;
+  }
+
+  function computeWeekRange(){
+    var now = new Date();
+    var day = now.getDay(); // 0=Sun..6=Sat
+    var diffToMonday = (day === 0) ? -6 : (1 - day);
+    var monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMonday, 0, 0, 0);
+    var nextMonday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7, 0, 0, 0);
+    return { start: monday, end: nextMonday };
+  }
+
+  // ---------------- Student-facing consultation booking ----------------
+  // Every candidate slot is exactly 1 hour, generated that way rather than
+  // validated after the fact - a student is never even shown the option to
+  // request more than the maximum.
+  function generateCandidateSlots(weekStartIso){
+    var weekStart = new Date(weekStartIso);
+    var slots = [];
+    for(var d = 0; d < 5; d++){ // Mon-Fri
+      for(var h = 9; h < 17; h++){ // 09:00-17:00, one slot per hour
+        var start = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + d, h, 0, 0);
+        var end = new Date(start.getTime() + 3600000); // fixed 1-hour duration, not adjustable
+        slots.push({ start: start, end: end });
+      }
+    }
+    return slots;
+  }
+
+  function slotOverlapsBusy(slot, busyBlocks){
+    return (busyBlocks || []).some(function(b){
+      var bStart = new Date(b.start), bEnd = new Date(b.end);
+      return slot.start < bEnd && slot.end > bStart;
+    });
+  }
+
+  function loadConsultationBookingUI(container, studentData){
+    if(!ensureFirebaseApp()){ container.textContent = "Booking isn't available right now."; return; }
+    var sdk = window.firebaseSDK;
+    sdk.getDoc(sdk.doc(firebaseDb, "adminSettings", "consultation")).then(function(snap){
+      if(!snap || !snap.exists || !snap.exists() || !snap.data().weekStart){
+        container.textContent = "No consultation schedule has been synced yet \u2014 check back later.";
+        return;
+      }
+      renderBookingForm(container, snap.data(), studentData);
+    }).catch(function(){
+      container.textContent = "Couldn't load available times right now.";
+    });
+  }
+
+  function renderBookingForm(container, settings, studentData){
+    var candidates = generateCandidateSlots(settings.weekStart);
+    var free = candidates.filter(function(slot){ return !slotOverlapsBusy(slot, settings.busyBlocks); });
+
+    container.innerHTML = "";
+    if(!free.length){
+      container.textContent = "No free slots this week \u2014 check back after the next sync.";
+      return;
+    }
+
+    var select = document.createElement("select");
+    select.className = "row-input";
+    free.forEach(function(slot, i){
+      var opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = slot.start.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) +
+        ", " + slot.start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) +
+        " \u2013 " + slot.end.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+      select.appendChild(opt);
+    });
+    container.appendChild(select);
+
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "btn secondary"; btn.style.marginLeft = "8px";
+    btn.textContent = "Request this slot";
+    container.appendChild(btn);
+
+    var statusEl = document.createElement("p");
+    statusEl.className = "card-hint";
+    statusEl.style.marginTop = "8px";
+    container.appendChild(statusEl);
+
+    btn.addEventListener("click", function(){
+      var slot = free[parseInt(select.value, 10)];
+      btn.disabled = true;
+      statusEl.textContent = "Sending request\u2026";
+      submitConsultationBooking(studentData, slot, settings.chatWebhookUrl).then(function(){
+        statusEl.textContent = "Request sent \u2014 your lecturer will confirm it on their calendar directly.";
+        btn.disabled = false;
+      }).catch(function(err){
+        statusEl.textContent = "Error: " + (err && err.message ? err.message : err);
+        btn.disabled = false;
+      });
+    });
+  }
+
+  function submitConsultationBooking(studentData, slot, webhookUrl){
+    var sdk = window.firebaseSDK;
+    var reqRef = sdk.doc(sdk.collection(firebaseDb, "consultationRequests"));
+    var payload = {
+      studentEmail: studentData.studentEmail,
+      studentName: studentData.studentName,
+      start: slot.start.toISOString(),
+      end: slot.end.toISOString(),
+      status: "pending",
+      requestedAt: sdk.serverTimestamp()
+    };
+    return sdk.setDoc(reqRef, payload).then(function(){
+      if(webhookUrl){
+        // Best-effort, fire-and-forget - Chat webhooks are documented mainly for
+        // server-side use, so this may not succeed from a browser (CORS). Booking
+        // itself is already saved to Firestore regardless of whether this works.
+        fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json; charset=UTF-8" },
+          body: JSON.stringify({
+            text: "New consultation request from " + studentData.studentName + " for " +
+              slot.start.toLocaleString("en-GB") + " \u2013 " + slot.end.toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"})
+          })
+        }).catch(function(){ /* ignore - booking already saved either way */ });
+      }
+    });
+  }
+
+  function setCalendarSyncStatus(msg, type){
+    var el = document.getElementById("calendarSyncStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info"; el.textContent = msg;
+  }
+  function setConsultationRequestsStatus(msg, type){
+    var el = document.getElementById("consultationRequestsStatus");
+    if(!msg){ el.className = ""; el.textContent = ""; return; }
+    el.className = type || "info"; el.textContent = msg;
+  }
+
+  function ensureCalendarToken(){
+    return new Promise(function(resolve, reject){
+      if(calendarAccessToken){ resolve(calendarAccessToken); return; }
+      if(!window.google || !window.google.accounts || !window.google.accounts.oauth2){
+        reject(new Error("Google's sign-in library hasn't loaded yet - wait a second and try again."));
+        return;
+      }
+      if(!state.googleClientId){
+        reject(new Error("Set your Google Client ID in step 5 (Send by email) first - it's reused here for Calendar access."));
+        return;
+      }
+      if(!calendarTokenClient){
+        calendarTokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: state.googleClientId,
+          scope: "https://www.googleapis.com/auth/calendar.events.readonly",
+          callback: function(resp){
+            if(resp && resp.access_token){
+              calendarAccessToken = resp.access_token;
+              calendarTokenClient._resolve(resp.access_token);
+            } else {
+              calendarTokenClient._reject(new Error("Google didn't return an access token."));
+            }
+          }
+        });
+      }
+      calendarTokenClient._resolve = resolve;
+      calendarTokenClient._reject = reject;
+      calendarTokenClient.requestAccessToken();
+    });
+  }
+
+  function renderWeeklyHoursSummary(hoursThisWeek, syncedAt){
+    var target = state.weeklyTargetHours;
+    document.getElementById("weeklyHoursSummary").style.display = "";
+    document.getElementById("hoursThisWeekDisplay").textContent = round1(hoursThisWeek) + "h";
+    var remainingEl = document.getElementById("hoursRemainingDisplay");
+    if(target == null || target === ""){
+      remainingEl.textContent = "\u2014";
+    } else {
+      var remaining = Math.max(0, Number(target) - hoursThisWeek);
+      remainingEl.textContent = round1(remaining) + "h of " + round1(Number(target)) + "h";
+    }
+    document.getElementById("lastSyncedNote").textContent = syncedAt ? ("Last synced: " + new Date(syncedAt).toLocaleString("en-GB")) : "";
+  }
+
+  document.getElementById("weeklyTargetHoursInput").addEventListener("input", function(e){
+    state.weeklyTargetHours = e.target.value === "" ? null : parseFloat(e.target.value);
+    saveConfig();
+    var summary = document.getElementById("weeklyHoursSummary");
+    if(summary.style.display !== "none" && summary.dataset.hoursThisWeek != null){
+      renderWeeklyHoursSummary(parseFloat(summary.dataset.hoursThisWeek), summary.dataset.syncedAt);
+    }
+  });
+
+  document.getElementById("chatWebhookUrlInput").addEventListener("change", function(e){
+    if(!ensureFirebaseApp() || !currentAuthUser){ setCalendarSyncStatus("Sign in and configure Firebase first.", "warn"); return; }
+    var sdk = window.firebaseSDK;
+    var ref = sdk.doc(firebaseDb, "adminSettings", "consultation");
+    sdk.setDoc(ref, { chatWebhookUrl: e.target.value }, { merge: true }).catch(function(err){
+      setCalendarSyncStatus("Couldn't save webhook URL: " + (err && err.message ? err.message : err), "error");
+    });
+  });
+
+  document.getElementById("syncCalendarBtn").addEventListener("click", function(){
+    if(!currentAuthUser || currentAuthRole !== "admin"){ setCalendarSyncStatus("Sign in as admin first.", "warn"); return; }
+    if(!ensureFirebaseApp()){ setCalendarSyncStatus("Firebase isn't configured yet.", "warn"); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    setCalendarSyncStatus("Connecting to Google Calendar\u2026", "info");
+
+    ensureCalendarToken().then(function(token){
+      setCalendarSyncStatus("Fetching this week's events\u2026", "info");
+      var range = computeWeekRange();
+      var url = "https://www.googleapis.com/calendar/v3/calendars/primary/events" +
+        "?timeMin=" + encodeURIComponent(range.start.toISOString()) +
+        "&timeMax=" + encodeURIComponent(range.end.toISOString()) +
+        "&singleEvents=true&orderBy=startTime";
+      return fetch(url, { headers: { "Authorization": "Bearer " + token } }).then(function(res){
+        if(!res.ok) throw new Error("Calendar API returned HTTP " + res.status);
+        return res.json();
+      });
+    }).then(function(data){
+      var items = data.items || [];
+      var hoursThisWeek = 0;
+      var busyBlocks = [];
+      items.forEach(function(ev){
+        if(!ev.start || !ev.end || !ev.summary) return;
+        var info = categorizeCalendarEvent(ev.summary);
+        var hours = eventDurationHours(ev);
+        if(info.category === "consultation" && /^Consultation:\s*.+/i.test(ev.summary.trim())){
+          hoursThisWeek += hours;
+        }
+        // Sanitized for student view - category + time only, never the real title/description
+        busyBlocks.push({
+          start: (ev.start.dateTime || ev.start.date),
+          end: (ev.end.dateTime || ev.end.date),
+          category: info.category
+        });
+      });
+
+      var sdk = window.firebaseSDK;
+      var ref = sdk.doc(firebaseDb, "adminSettings", "consultation");
+      var syncedAtIso = new Date().toISOString();
+      return sdk.setDoc(ref, {
+        busyBlocks: busyBlocks,
+        weekStart: computeWeekRange().start.toISOString(),
+        syncedAt: sdk.serverTimestamp(),
+        syncedAtClient: syncedAtIso
+      }, { merge: true }).then(function(){
+        return { hoursThisWeek: hoursThisWeek, syncedAtIso: syncedAtIso, count: busyBlocks.length };
+      });
+    }).then(function(result){
+      btn.disabled = false;
+      var summary = document.getElementById("weeklyHoursSummary");
+      summary.dataset.hoursThisWeek = result.hoursThisWeek;
+      summary.dataset.syncedAt = result.syncedAtIso;
+      renderWeeklyHoursSummary(result.hoursThisWeek, result.syncedAtIso);
+      setCalendarSyncStatus("Synced " + result.count + " event(s) for this week.", "info");
+    }).catch(function(err){
+      btn.disabled = false;
+      setCalendarSyncStatus("Error: " + (err && err.message ? err.message : err), "error");
+    });
+  });
+
+  function loadConsultationSettings(){
+    document.getElementById("weeklyTargetHoursInput").value = state.weeklyTargetHours != null ? state.weeklyTargetHours : "";
+    if(!ensureFirebaseApp()) return;
+    var sdk = window.firebaseSDK;
+    sdk.getDoc(sdk.doc(firebaseDb, "adminSettings", "consultation")).then(function(snap){
+      if(!snap || !snap.exists || !snap.exists()) return;
+      var data = snap.data();
+      document.getElementById("chatWebhookUrlInput").value = data.chatWebhookUrl || "";
+      if(data.busyBlocks){
+        var hoursThisWeek = 0;
+        data.busyBlocks.forEach(function(b){
+          if(b.category === "consultation"){
+            var s = new Date(b.start), e = new Date(b.end);
+            hoursThisWeek += Math.max(0, (e-s)/3600000);
+          }
+        });
+        var summary = document.getElementById("weeklyHoursSummary");
+        summary.dataset.hoursThisWeek = hoursThisWeek;
+        summary.dataset.syncedAt = data.syncedAtClient || "";
+        renderWeeklyHoursSummary(hoursThisWeek, data.syncedAtClient);
+      }
+    }).catch(function(){ /* no existing settings yet - fine, first-time use */ });
+  }
+
+  function renderConsultationRequests(){
+    if(!ensureFirebaseApp() || !currentAuthUser) return;
+    var sdk = window.firebaseSDK;
+    var tbody = document.getElementById("consultationRequestsRows");
+    setConsultationRequestsStatus("Loading requests\u2026", "info");
+    sdk.getDocs(sdk.collection(firebaseDb, "consultationRequests")).then(function(snapshot){
+      tbody.innerHTML = "";
+      var pending = [];
+      snapshot.forEach(function(docSnap){
+        var data = docSnap.data();
+        if(data.status === "pending") pending.push({ id: docSnap.id, data: data });
+      });
+      if(!pending.length){
+        setConsultationRequestsStatus("No pending requests.", "info");
+        return;
+      }
+      setConsultationRequestsStatus("", null);
+      pending.forEach(function(req){
+        var tr = document.createElement("tr");
+        var tdStudent = document.createElement("td"); tdStudent.textContent = req.data.studentName || req.data.studentEmail;
+        var tdSlot = document.createElement("td");
+        tdSlot.textContent = req.data.start ? (new Date(req.data.start).toLocaleString("en-GB") + " \u2013 " + new Date(req.data.end).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"})) : "\u2014";
+        var tdStatus = document.createElement("td"); tdStatus.textContent = "Pending";
+        var tdActions = document.createElement("td");
+        var approveBtn = document.createElement("button");
+        approveBtn.type = "button"; approveBtn.className = "btn secondary"; approveBtn.textContent = "Approve";
+        approveBtn.addEventListener("click", function(){
+          sdk.updateDoc(sdk.doc(firebaseDb, "consultationRequests", req.id), { status: "approved" }).then(function(){
+            setConsultationRequestsStatus("Approved. Remember to add this to your real calendar yourself.", "info");
+            renderConsultationRequests();
+          }).catch(function(err){ setConsultationRequestsStatus("Error: " + err.message, "error"); });
+        });
+        var declineBtn = document.createElement("button");
+        declineBtn.type = "button"; declineBtn.className = "btn secondary"; declineBtn.textContent = "Decline";
+        declineBtn.addEventListener("click", function(){
+          sdk.updateDoc(sdk.doc(firebaseDb, "consultationRequests", req.id), { status: "declined" }).then(function(){
+            setConsultationRequestsStatus("Declined.", "info");
+            renderConsultationRequests();
+          }).catch(function(err){ setConsultationRequestsStatus("Error: " + err.message, "error"); });
+        });
+        tdActions.appendChild(approveBtn); tdActions.appendChild(declineBtn);
+        tr.appendChild(tdStudent); tr.appendChild(tdSlot); tr.appendChild(tdStatus); tr.appendChild(tdActions);
+        tbody.appendChild(tr);
+      });
+    }).catch(function(err){
+      setConsultationRequestsStatus("Couldn't load requests: " + (err && err.message ? err.message : err), "error");
+    });
+  }
 
   // ---------------- Sheet / grid helpers ----------------
   function isNonEmptyString(v){ return typeof v === "string" && v.trim() !== ""; }
@@ -3081,7 +3862,7 @@
         var isMissing = (raw === "" || raw === undefined || raw === null || isNaN(val));
         var w = (a.weight != null ? a.weight : a.max) || 0;
         if(isMissing){ missing.push(a.name); } else { achieved += val; weightedSum += (a.max>0 ? val/a.max : 0) * w; }
-        marks.push({ name:a.name, max:a.max, weight:w, value: isMissing ? null : val, missing:isMissing });
+        marks.push({ name:a.name, max:a.max, weight:w, value: isMissing ? null : val, missing:isMissing, assessmentType: a.assessmentType || guessAssessmentType(a.name), masked: !!a.maskMarks });
       });
       // Weighted average across assessments - when every assessment's weight equals
       // its own max marks (the default, nothing detected/overridden), this reduces
@@ -3187,6 +3968,20 @@
         updateTotalsDisplay(profile);
       });
 
+      var tdMask = document.createElement("td");
+      var maskCb = document.createElement("input");
+      maskCb.type = "checkbox";
+      maskCb.checked = !!a.maskMarks;
+      maskCb.setAttribute("aria-label", "Mask this assessment's marks for students");
+      maskCb.title = "Students will see \u201c***\u201d instead of a percentage for this assessment - their overall total still shows normally.";
+      maskCb.addEventListener("change", function(){
+        a.maskMarks = maskCb.checked;
+        saveConfig();
+        computeAndRender();
+      });
+      tdMask.style.textAlign = "center";
+      tdMask.appendChild(maskCb);
+
       var tdRemove = document.createElement("td");
       var removeBtn = document.createElement("button");
       removeBtn.type="button"; removeBtn.className="icon-btn"; removeBtn.textContent="\u2715";
@@ -3201,7 +3996,7 @@
       });
       tdRemove.appendChild(removeBtn);
 
-      tr.appendChild(tdCol); tr.appendChild(tdName); tr.appendChild(tdMax); tr.appendChild(tdWeight); tr.appendChild(tdRemove);
+      tr.appendChild(tdCol); tr.appendChild(tdName); tr.appendChild(tdMax); tr.appendChild(tdWeight); tr.appendChild(tdMask); tr.appendChild(tdRemove);
       tbody.appendChild(tr);
     });
     updateTotalsDisplay(profile);
@@ -3564,6 +4359,7 @@
     var hasData = list.length > 0;
     document.getElementById("hexagonCard").style.display = hasData ? "" : "none";
     document.getElementById("publishCard").style.display = hasData ? "" : "none";
+    document.getElementById("consultationCard").style.display = hasData ? "" : "none";
   }
 
   function round1(n){ return Math.round(n*10)/10; }
@@ -3719,7 +4515,10 @@
       if(m.missing) return [m.name, round1(w) + "%", "Not recorded"];
       var contribution = (m.max > 0) ? (m.value / m.max) * w : 0;
       pdfWeightedAchieved += contribution;
-      return [m.name, round1(w) + "%", round1(contribution) + "%"];
+      // Masking is opt-in per assessment (the checkbox in step 2), not inferred
+      // from assessment type.
+      var achievedText = m.masked ? "(***)" : (round1(contribution) + "%");
+      return [m.name, round1(w) + "%", achievedText];
     });
     body.push(["Total", round1(pdfWeightSum) + "%", round1(pdfWeightedAchieved) + "%"]);
 
